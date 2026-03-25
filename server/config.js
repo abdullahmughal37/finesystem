@@ -2,13 +2,14 @@ require("dotenv").config();
 
 module.exports = {
   db: {
-    host: process.env.DB_HOST || "localhost",
-    user: process.env.DB_USER || "root",
-    password: process.env.DB_PASSWORD || "",
-    database: process.env.DB_NAME || "library_db",
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+    port: process.env.DB_PORT
   },
   jwt: {
-    secret: process.env.JWT_SECRET || "library-jwt-secret-change-in-prod",
+    secret: process.env.JWT_SECRET,
     expiresIn: process.env.JWT_EXPIRE || "7d",
   },
   smtp: {
