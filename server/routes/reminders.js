@@ -17,6 +17,34 @@ router.get("/overdue", (req, res) => {
   });
 });
 
+
+
+
+// // ↓ ADD THIS HERE ↓
+// router.get("/test-email", (req, res) => {
+//   const nodemailer = require("nodemailer");
+//   const config = require("../config");
+//   console.log("SMTP USER:", config.smtp.user);
+//   console.log("SMTP PASS length:", config.smtp.pass?.length);
+//   const transporter = nodemailer.createTransport({
+//     host: "smtp.gmail.com",
+//     port: 587,
+//     secure: false,
+//     auth: { user: config.smtp.user, pass: config.smtp.pass },
+//      tls: { rejectUnauthorized: false },
+//   });
+//   transporter.verify((err) => {
+//     if (err) return res.json({ ok: false, error: err.message });
+//     res.json({ ok: true, message: "SMTP connected successfully!" });
+//   });
+// });
+// // ↑ A
+
+
+
+
+
+
 router.post("/send", (req, res) => {
   db.query(`
     SELECT s.email, s.name, b.title, br.due_date
