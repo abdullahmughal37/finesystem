@@ -1,0 +1,11 @@
+id,rollNo,name,email,dept,semester,status,enrolled
+1,CS-001,Ali Khan,ali.khan@university.edu,Computer Science,5,active,2023-09-01
+2,CS-002,Sara Ahmed,sara.ahmed@university.edu,Computer Science,4,active,2023-09-01
+3,SE-003,Usman Tariq,usman.tariq@university.edu,Software Engineering,6,active,2022-09-01
+4,IT-004,Hassan Raza,hassan.raza@university.edu,Information Technology,3,active,2024-02-10
+5,CS-005,Ayesha Malik,ayesha.malik@university.edu,Computer Science,2,active,2024-02-10
+6,EE-006,Bilal Hussain,bilal.hussain@university.edu,Electrical Engineering,7,inactive,2021-09-01
+7,ME-007,Omar Farooq,omar.farooq@university.edu,Mechanical Engineering,5,active,2023-09-01
+8,CS-008,Zain Ali,zain.ali@university.edu,Computer Science,1,active,2025-01-15
+9,IT-009,Maria Noor,maria.noor@university.edu,Information Technology,4,active,2023-09-01
+10,SE-010,Hamza Khalid,hamza.khalid@university.edu,Software Engineering,6,active,2022-09-01

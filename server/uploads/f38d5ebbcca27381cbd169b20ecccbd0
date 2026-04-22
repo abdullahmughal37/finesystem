@@ -1,0 +1,4 @@
+title,author,isbn,serial,category,total
+Introduction to Algorithms,Cormen,9780262033848,SN-CS-001,Computer Science,5
+Data Structures,Mark Weiss,9780132576272,SN-CS-002,Computer Science,4
+Operating Systems,Silberschatz,9781118063330,SN-CS-003,Computer Science,3

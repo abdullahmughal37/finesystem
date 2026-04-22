@@ -1,0 +1,5 @@
+issue ho raha ha but update ni ho rha yaha sa stat karna 
+
+server start  npx nodemon server.js
+
+frontend start   npm run dev
