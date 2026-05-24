@@ -19,24 +19,33 @@ type RecordType = {
   fineAmount: number;
 };
 
+type LastReturnedType = {
+  bookTitle: string;
+  studentName: string;
+  fineAmount: number;
+  daysLate: number;
+};
+
 export function ReturnBook() {
   const [input, setInput] = useState("");
-  const [record, setRecord] = useState<RecordType | null>(null);
+  const [records, setRecords] = useState<RecordType[]>([]);
   const [error, setError] = useState("");
-  const [returned, setReturned] = useState(false);
+  const [lastReturned, setLastReturned] = useState<LastReturnedType | null>(null);
   const [loading, setLoading] = useState(false);
+  const [returningId, setReturningId] = useState<number | null>(null);
 
   const handleSearch = async () => {
     const key = input.trim();
     if (!key) return;
     setLoading(true);
     setError("");
-    setRecord(null);
+    setRecords([]);
+    setLastReturned(null);
     try {
       const res = await fetch(`${API}/search?q=${encodeURIComponent(key)}`);
       const data = await res.json();
-      if (data.found && data.record) {
-        setRecord(data.record);
+      if (data.found && data.records && data.records.length > 0) {
+        setRecords(data.records);
       } else {
         setError("No active issue found for this roll number or serial. Please verify.");
       }
@@ -47,13 +56,10 @@ export function ReturnBook() {
     }
   };
 
-  const overdueDays = record?.daysLate ?? 0;
-  const fineAmount = record?.fineAmount ?? 0;
-  const isOverdue = overdueDays > 0;
-
-  const handleReturn = async () => {
+  const handleReturn = async (record: RecordType) => {
     if (!record?.recordId) return;
-    setLoading(true);
+    setReturningId(record.recordId);
+    setError("");
     try {
       const res = await fetch(`${API}/return`, {
         method: "POST",
@@ -62,22 +68,34 @@ export function ReturnBook() {
       });
       const data = await res.json();
       if (data.success) {
-        setReturned(true);
+        setLastReturned({
+          bookTitle: record.bookTitle,
+          studentName: record.studentName,
+          fineAmount: record.fineAmount,
+          daysLate: record.daysLate,
+        });
+        // Remove only this book from the list, others stay
+        setRecords((prev) => prev.filter((r) => r.recordId !== record.recordId));
       } else {
         setError(data.error || "Return failed. Please try again.");
       }
     } catch {
       setError("Server error. Please try again.");
     } finally {
-      setLoading(false);
+      setReturningId(null);
     }
   };
 
   const handleReset = () => {
-    setInput(""); setRecord(null); setError(""); setReturned(false);
+    setInput("");
+    setRecords([]);
+    setError("");
+    setLastReturned(null);
   };
 
-  if (returned && record) {
+  // All books returned — show final success screen
+  if (lastReturned && records.length === 0) {
+    const isOverdue = lastReturned.daysLate > 0;
     return (
       <div className="p-6 flex items-center justify-center min-h-[60vh]">
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-10 text-center max-w-md w-full">
@@ -86,7 +104,7 @@ export function ReturnBook() {
           </div>
           <h2 className="text-gray-800 mb-2">Book Returned Successfully!</h2>
           <p className="text-sm text-gray-500 mb-6">
-            <span className="font-semibold text-gray-700">{record.bookTitle}</span> has been returned by {record.studentName}
+            <span className="font-semibold text-gray-700">{lastReturned.bookTitle}</span> has been returned by {lastReturned.studentName}
           </p>
           {isOverdue && (
             <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
@@ -94,8 +112,8 @@ export function ReturnBook() {
                 <DollarSign size={16} className="text-red-600" />
                 <span className="text-red-700 font-semibold text-sm">Fine Generated</span>
               </div>
-              <p className="text-2xl font-bold text-red-600 mb-1">PKR {fineAmount}</p>
-              <p className="text-xs text-red-500">{overdueDays} days overdue × PKR {FINE_PER_DAY}/day</p>
+              <p className="text-2xl font-bold text-red-600 mb-1">PKR {lastReturned.fineAmount}</p>
+              <p className="text-xs text-red-500">{lastReturned.daysLate} days overdue × PKR {FINE_PER_DAY}/day</p>
             </div>
           )}
           <button
@@ -117,6 +135,7 @@ export function ReturnBook() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <div className="lg:col-span-2 space-y-4">
+
           {/* Search */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 space-y-4">
             <div className="flex items-center gap-2 pb-3 border-b border-gray-100">
@@ -153,66 +172,106 @@ export function ReturnBook() {
             )}
           </div>
 
-          {/* Issue record */}
-          {record && (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 space-y-4">
-              <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-                <h3 className="text-gray-800">Issue Record Found</h3>
-                <span className={`text-xs font-semibold px-2 py-1 rounded-full ${isOverdue ? "bg-red-100 text-red-600" : "bg-emerald-100 text-emerald-700"}`}>
-                  {isOverdue ? `${overdueDays} Days Overdue` : "On Time"}
+          {/* Success banner when one book returned but more remain */}
+          {lastReturned && records.length > 0 && (
+            <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
+              <CheckCircle size={16} className="text-emerald-600 shrink-0" />
+              <div>
+                <p className="text-sm font-semibold text-emerald-800">
+                  "{lastReturned.bookTitle}" returned successfully
+                </p>
+                {lastReturned.daysLate > 0 && (
+                  <p className="text-xs text-emerald-600 mt-0.5">
+                    Fine generated: PKR {lastReturned.fineAmount} ({lastReturned.daysLate} days overdue)
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Student header + all book records */}
+          {records.length > 0 && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-gray-400 mb-0.5">Student</p>
+                  <h3 className="text-gray-800 font-semibold">{records[0].studentName} — {records[0].rollNo}</h3>
+                  <p className="text-xs text-gray-400">{records[0].dept}</p>
+                </div>
+                <span className="text-xs bg-blue-100 text-blue-700 font-semibold px-2.5 py-1 rounded-full">
+                  {records.length} Active Issue{records.length > 1 ? "s" : ""}
                 </span>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                {[
-                  ["Student Name", record.studentName],
-                  ["Roll Number", record.rollNo],
-                  ["Department", record.dept],
-                  ["Book Title", record.bookTitle],
-                  ["Book Serial", record.bookSerial],
-                  ["Issue Date", record.issueDate],
-                  ["Due Date", record.dueDate],
-                  ["Return Date", new Date().toLocaleDateString() + " (Today)"],
-                ].map(([label, value]) => (
-                  <div key={label} className={label === "Book Title" || label === "Student Name" ? "col-span-2" : ""}>
-                    <p className="text-xs text-gray-400 mb-0.5">{label}</p>
-                    <p className={`text-sm font-medium ${label === "Due Date" && isOverdue ? "text-red-600" : "text-gray-800"}`}>{value}</p>
-                  </div>
-                ))}
-              </div>
+              {records.map((record) => {
+                const overdueDays = record.daysLate ?? 0;
+                const fineAmount = record.fineAmount ?? 0;
+                const isOverdue = overdueDays > 0;
+                const isThisReturning = returningId === record.recordId;
 
-              {/* Fine notification */}
-              {isOverdue ? (
-                <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <AlertTriangle size={16} className="text-red-500" />
-                    <span className="text-red-700 font-semibold text-sm">Overdue Fine Detected</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs text-red-500">{overdueDays} days × PKR {FINE_PER_DAY}/day</p>
-                      <p className="text-xs text-red-500 mt-0.5">Fine will be auto-generated upon return</p>
+                return (
+                  <div key={record.recordId} className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 space-y-4">
+                    <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+                      <h3 className="text-gray-800">Issue Record Found</h3>
+                      <span className={`text-xs font-semibold px-2 py-1 rounded-full ${isOverdue ? "bg-red-100 text-red-600" : "bg-emerald-100 text-emerald-700"}`}>
+                        {isOverdue ? `${overdueDays} Days Overdue` : "On Time"}
+                      </span>
                     </div>
-                    <p className="text-2xl font-bold text-red-600">PKR {fineAmount}</p>
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle size={16} className="text-emerald-600" />
-                    <span className="text-emerald-700 font-semibold text-sm">No fine – book returned on time</span>
-                  </div>
-                </div>
-              )}
 
-              <button
-                onClick={handleReturn}
-                disabled={loading}
-                className="w-full py-3 rounded-xl text-sm text-white font-semibold hover:opacity-90 transition-opacity shadow-md disabled:opacity-70"
-                style={{ background: "linear-gradient(135deg, #1F3A8A, #3B82F6)" }}
-              >
-                ✓ Confirm Book Return{isOverdue ? ` & Generate PKR ${fineAmount} Fine` : ""}
-              </button>
+                    <div className="grid grid-cols-2 gap-4">
+                      {[
+                        ["Student Name", record.studentName],
+                        ["Roll Number", record.rollNo],
+                        ["Department", record.dept],
+                        ["Book Title", record.bookTitle],
+                        ["Book Serial", record.bookSerial],
+                        ["Issue Date", record.issueDate],
+                        ["Due Date", record.dueDate],
+                        ["Return Date", new Date().toLocaleDateString() + " (Today)"],
+                      ].map(([label, value]) => (
+                        <div key={`${record.recordId}-${label}`} className={label === "Book Title" || label === "Student Name" ? "col-span-2" : ""}>
+                          <p className="text-xs text-gray-400 mb-0.5">{label}</p>
+                          <p className={`text-sm font-medium ${label === "Due Date" && isOverdue ? "text-red-600" : "text-gray-800"}`}>{value}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    {isOverdue ? (
+                      <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <AlertTriangle size={16} className="text-red-500" />
+                          <span className="text-red-700 font-semibold text-sm">Overdue Fine Detected</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-xs text-red-500">{overdueDays} days × PKR {FINE_PER_DAY}/day</p>
+                            <p className="text-xs text-red-500 mt-0.5">Fine will be auto-generated upon return</p>
+                          </div>
+                          <p className="text-2xl font-bold text-red-600">PKR {fineAmount}</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle size={16} className="text-emerald-600" />
+                          <span className="text-emerald-700 font-semibold text-sm">No fine – book returned on time</span>
+                        </div>
+                      </div>
+                    )}
+
+                    <button
+                      onClick={() => handleReturn(record)}
+                      disabled={returningId !== null}
+                      className="w-full py-3 rounded-xl text-sm text-white font-semibold hover:opacity-90 transition-opacity shadow-md disabled:opacity-70"
+                      style={{ background: "linear-gradient(135deg, #1F3A8A, #3B82F6)" }}
+                    >
+                      {isThisReturning
+                        ? "Processing..."
+                        : `✓ Confirm Book Return${isOverdue ? ` & Generate PKR ${fineAmount} Fine` : ""}`}
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
