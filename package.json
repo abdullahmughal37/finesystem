@@ -1,7 +1,8 @@
 {
-  "name": "@figma/my-make-file",
+  "name": "university-library-management-system",
   "private": true,
-  "version": "0.0.1",
+  "version": "1.0.0",
+  "description": "University library administration system for catalog, circulation, fines, reports, and student clearance.",
   "type": "module",
   "scripts": {
     "build": "vite build",
