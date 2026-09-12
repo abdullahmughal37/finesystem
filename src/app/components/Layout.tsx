@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { api } from "@/config";
 import { Outlet, NavLink, useNavigate } from "react-router";
 import { useAuth } from "@/app/contexts/AuthContext";
+import { requestJson } from '@/lib/api';
 import {
   LayoutDashboard,
   Users,
@@ -17,6 +18,8 @@ import {
   LogOut,
   Menu,
   X,
+  UserRound,
+  FileCheck2,
 } from "lucide-react";
 
 const navItems = [
@@ -26,6 +29,7 @@ const navItems = [
   { to: "/issue-book", label: "Issue Book", icon: BookPlus },
   { to: "/return-book", label: "Return Book", icon: BookCheck },
   { to: "/fines", label: "Fines", icon: DollarSign },
+  { to: "/clearance", label: "Clearance", icon: FileCheck2 },
   { to: "/reminder-emails", label: "Reminder Emails", icon: Bell },
   { to: "/reports", label: "Reports", icon: BarChart3 },
   { to: "/settings", label: "Settings", icon: Settings },
@@ -36,23 +40,42 @@ export function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
-  const [recentFines, setRecentFines] = useState<{ rollNo: string; fine_amount: number; created_at: string }[]>([]);
+  const [recentFines, setRecentFines] = useState<{ id: number; registrationNo: string; accessionNo: string; fineAmount: number; createdAt: string }[]>([]);
   const [settings, setSettings] = useState<{ universityName?: string; logoUrl?: string }>({});
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const notificationRef = useRef<HTMLDivElement>(null);
+  const adminRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    fetch(api("/api/notifications/recent-fines"))
-      .then((r) => r.json())
+  const loadNotifications = useCallback(() => {
+    requestJson("/api/notifications/recent-fines")
       .then((rows) => setRecentFines(rows || []))
       .catch(() => []);
   }, []);
+  useEffect(loadNotifications, [loadNotifications]);
   useEffect(() => {
     fetch(api("/api/settings"))
       .then((r) => r.json())
       .then(setSettings)
       .catch(() => {});
   }, []);
+  useEffect(() => {
+    if (!notifOpen && !adminOpen) return;
+    const closeOutside = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (notifOpen && !notificationRef.current?.contains(target)) setNotifOpen(false);
+      if (adminOpen && !adminRef.current?.contains(target)) setAdminOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { setNotifOpen(false); setAdminOpen(false); }
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [notifOpen, adminOpen]);
 
   const handleLogout = () => {
     logout();
@@ -162,29 +185,23 @@ export function Layout() {
             {mobileOpen ? <X size={22} /> : <Menu size={22} />}
           </button>
 
-          {/* Search - disabled */}
-          <div className="flex-1 max-w-md relative">
-            <input
-              type="text"
-              placeholder="Search (disabled)"
-              disabled
-              className="w-full pl-9 pr-4 py-2 bg-gray-100 border border-gray-200 rounded-lg text-sm text-gray-500 cursor-not-allowed"
-            />
-          </div>
-
           <div className="flex-1" />
 
           {/* Notifications dropdown */}
-          <div className="relative">
+          <div className="relative" ref={notificationRef}>
             <button
-              onClick={() => { setNotifOpen(!notifOpen); setAdminOpen(false); }}
+              type="button"
+              aria-label="Notifications"
+              aria-expanded={notifOpen}
+              aria-haspopup="dialog"
+              onClick={() => { const opening = !notifOpen; setNotifOpen(opening); setAdminOpen(false); if (opening) loadNotifications(); }}
               className="relative w-9 h-9 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 transition-colors"
             >
               <Bell size={18} />
               {recentFines.length > 0 && <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />}
             </button>
             {notifOpen && (
-              <div className="absolute right-0 top-full mt-2 w-72 bg-white rounded-xl shadow-lg border border-gray-100 py-2 z-50">
+              <div role="dialog" aria-label="Recent notifications" className="absolute right-0 top-full mt-2 w-72 max-w-[calc(100vw-2rem)] bg-white rounded-xl shadow-lg border border-gray-100 py-2 z-50">
                 <div className="px-4 py-2 border-b border-gray-100">
                   <p className="text-sm font-semibold text-gray-800">Recent Fines</p>
                 </div>
@@ -192,10 +209,11 @@ export function Layout() {
                   {recentFines.length === 0 ? (
                     <p className="px-4 py-4 text-xs text-gray-500">No recent fines</p>
                   ) : (
-                    recentFines.map((f, i) => (
-                      <div key={i} className="px-4 py-2 hover:bg-gray-50">
-                        <p className="text-xs font-mono text-gray-600">{f.rollNo}</p>
-                        <p className="text-xs text-gray-500">PKR {Number(f.fine_amount || 0).toLocaleString()} · {f.created_at ? new Date(f.created_at).toLocaleDateString() : ""}</p>
+                    recentFines.map((f) => (
+                      <div key={f.id} className="px-4 py-2 hover:bg-gray-50">
+                        <p className="text-xs font-mono text-gray-700">{f.registrationNo || "Unknown student"}</p>
+                        <p className="text-xs text-gray-500">PKR {Number(f.fineAmount || 0).toLocaleString()} · {f.createdAt ? new Date(f.createdAt).toLocaleDateString() : ""}</p>
+                        {f.accessionNo && <p className="text-[11px] text-gray-400">Book: {f.accessionNo}</p>}
                       </div>
                     ))
                   )}
@@ -205,21 +223,23 @@ export function Layout() {
           </div>
 
           {/* Admin profile dropdown */}
-          <div className="relative">
+          <div className="relative" ref={adminRef}>
             <button
+              type="button"
+              aria-label="Administrator menu"
+              aria-expanded={adminOpen}
+              aria-haspopup="menu"
               onClick={() => { setAdminOpen(!adminOpen); setNotifOpen(false); }}
               className="flex items-center gap-3 pl-2 border-l border-gray-200"
             >
-              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-semibold shadow-sm">
-                A
-              </div>
+              {settings.logoUrl ? <img src={api(settings.logoUrl)} alt="Library logo" className="w-9 h-9 rounded-full border bg-white object-contain shadow-sm" /> : <div className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 shadow-sm"><UserRound size={18} /></div>}
               <div className="hidden sm:block text-left">
-                <p className="text-sm font-semibold text-gray-800 leading-tight">Admin</p>
+                <p className="text-sm font-semibold text-gray-800 leading-tight">{user?.name || "Administrator"}</p>
                 <p className="text-xs text-gray-400 leading-tight">Administrator</p>
               </div>
             </button>
             {adminOpen && (
-              <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-lg border border-gray-100 py-2 z-50">
+              <div role="menu" className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-lg border border-gray-100 py-2 z-50">
                 <div className="px-4 py-3 border-b border-gray-100">
                   <p className="text-sm font-semibold text-gray-800">{user?.name || "Administrator"}</p>
                   <p className="text-xs text-gray-500">{user?.email || "admin@cuisahiwal.edu.pk"}</p>

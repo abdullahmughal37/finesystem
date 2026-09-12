@@ -1,92 +1,36 @@
-const express = require("express");
+const express = require('express');
 const router = express.Router();
-const db = require("../db");
-
-
-// GET ALL BOOKS (issued = active issues, available = total - issued, never negative)
-router.get("/", (req, res) => {
-  const sql = `
-    SELECT b.id, b.title, b.author, b.isbn, b.serial, b.category, b.total,
-      GREATEST(0, COALESCE(SUM(CASE WHEN br.status='issued' THEN 1 ELSE 0 END), 0)) AS issuedCount
-    FROM books b
-    LEFT JOIN borrow_records br ON b.serial = br.serialNo
-    GROUP BY b.id, b.serial, b.title, b.author, b.isbn, b.category, b.total
-  `;
-  db.query(sql, (err, result) => {
-    if (err) return res.status(500).json(err);
-    const rows = (result || []).map((r) => {
-      const issued = Math.max(0, Number(r.issuedCount) || 0);
-      const total = Math.max(0, Number(r.total) || 0);
-      const available = Math.max(0, total - issued);
-      return { ...r, issuedCount: issued, available, total };
-    });
+const db = require('../db');
+const { save, remove, pageOptions } = require('../lib/catalog');
+const { sendError } = require('../lib/database');
+const { today } = require('../lib/policy');
+router.get('/', async (req, res) => {
+  try {
+    const { page, limit, offset, search } = pageOptions(req.query);
+    const where = search ? "WHERE b.title LIKE ? OR b.accession_no LIKE ? OR b.author_name LIKE ? OR b.isbn LIKE ? OR JSON_UNQUOTE(JSON_EXTRACT(b.custom_data, '$.*')) LIKE ?" : '';
+    const args = search ? Array(5).fill(`%${search}%`) : [];
+    const [count] = await db.promise().query(`SELECT COUNT(*) total FROM books b ${where}`, args);
+    const [rows] = await db.promise().query(`SELECT b.*, (SELECT COUNT(*) FROM issues i WHERE i.book_id=b.id AND returned=0) issuedCount, (SELECT COUNT(*) FROM issues i WHERE i.book_id=b.id AND returned=0 AND due_date<?) overdueCount FROM books b ${where} ORDER BY b.id DESC LIMIT ? OFFSET ?`, [today(), ...args, limit, offset]);
+    const [stats] = await db.promise().query(`SELECT COUNT(*) total, SUM(EXISTS(SELECT 1 FROM issues i WHERE i.book_id=b.id AND returned=0)) issued, SUM(EXISTS(SELECT 1 FROM issues i WHERE i.book_id=b.id AND returned=0 AND due_date<?)) overdue FROM books b`, [today()]);
+    res.json({ rows, total: count[0].total, page, limit, stats: { total: Number(stats[0].total), issued: Number(stats[0].issued), available: Number(stats[0].total)-Number(stats[0].issued), overdue: Number(stats[0].overdue) } });
+  } catch (error) { sendError(res, error); }
+});
+router.post('/', async (req, res) => {
+  try { const id=await save('books', req.body); res.status(201).json({success:true,id}); } catch(error) {sendError(res,error);}
+});
+router.put('/:id', async (req, res) => {
+  try { await save('books',req.body,Number(req.params.id));res.json({success:true}); } catch(error) {sendError(res,error);}
+});
+router.delete('/:id', async (req, res) => {
+  try { await remove('books',Number(req.params.id));res.json({success:true}); } catch(error) {sendError(res,error);}
+});
+router.get('/issued/:accessionNo', async (req,res) => {
+  try {
+    const [rows]=await db.promise().query(`SELECT i.id, s.name, s.registration_no, i.issue_date, i.due_date, i.returned, i.return_date,
+      CASE WHEN i.returned=1 THEN 'Returned' WHEN i.due_date<? THEN 'Overdue' ELSE 'Issued' END status
+      FROM issues i JOIN students s ON s.id=i.student_id JOIN books b ON b.id=i.book_id
+      WHERE b.accession_no=? ORDER BY i.id DESC LIMIT 100`,[today(), req.params.accessionNo]);
     res.json(rows);
-  });
+  } catch(error) {sendError(res,error);}
 });
-
-
-// ADD BOOK
-router.post("/", (req, res) => {
-
-  const { title, author, isbn, serial, category, total } = req.body;
-
-  const available = total;
-
-  const sql =
-    "INSERT INTO books (title,author,isbn,serial,category,total,available) VALUES (?,?,?,?,?,?,?)";
-
-  db.query(
-    sql,
-    [title, author, isbn, serial, category, total, available],
-    (err) => {
-      if (err) return res.status(500).json(err);
-      res.json({ message: "Book Added" });
-    }
-  );
-
-});
-
-
-// DELETE BOOK
-router.delete("/:id", (req, res) => {
-
-  const { id } = req.params;
-
-  db.query("DELETE FROM books WHERE id=?", [id], (err) => {
-    if (err) return res.status(500).json(err);
-    res.json({ message: "Book Deleted" });
-  });
-
-});
-
-
-// GET book by serial (for lookup)
-router.get("/books/:serialNo", (req, res) => {
-  const { serialNo } = req.params;
-  db.query("SELECT * FROM books WHERE serial = ?", [serialNo], (err, result) => {
-    if (err) return res.status(500).json(err);
-    if (!result || result.length === 0) return res.json({ found: false });
-    res.json({ found: true, book: result[0] });
-  });
-});
-
-// GET issued students for a book serial (View Issued)
-router.get("/issued/:serialNo", (req, res) => {
-  const { serialNo } = req.params;
-  const sql = `
-    SELECT s.name, s.rollNo, br.issue_date as issue_date
-    FROM borrow_records br
-    JOIN students s ON s.rollNo = br.rollNo
-    WHERE br.serialNo = ? AND br.status = 'issued'
-  `;
-  db.query(sql, [serialNo], (err, result) => {
-    if (err) return res.status(500).json(err);
-    res.json(result || []);
-  });
-});
-
-
-
-
-
-module.exports = router;
+module.exports=router;

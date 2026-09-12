@@ -2,197 +2,92 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db");
 const ExcelJS = require("exceljs");
+const { today, daysLate, getPolicy, fineAmount } = require("../lib/policy");
+const { sendError } = require("../lib/database");
 
-/* Total books issued monthly */
-router.get("/issued-monthly", (req, res) => {
-  const sql = `
-    SELECT DATE_FORMAT(issue_date, '%Y-%m') as monthKey,
-      DATE_FORMAT(issue_date, '%b %Y') as month,
-      COUNT(*) as count
-    FROM borrow_records
-    WHERE issue_date >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
-    GROUP BY DATE_FORMAT(issue_date, '%Y-%m')
-    ORDER BY monthKey
-  `;
-  db.query(sql, (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json(rows || []);
-  });
+router.get("/issued-monthly", async (req, res) => {
+  try { const [rows] = await db.promise().query(`SELECT DATE_FORMAT(issue_date, '%Y-%m') as month, COUNT(*) as count
+            FROM issues
+            WHERE issue_date >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
+            GROUP BY DATE_FORMAT(issue_date, '%Y-%m')
+            ORDER BY MIN(issue_date)`); res.json(rows);
+  } catch (error) { sendError(res, error); }
 });
 
-/* Most issued books */
-router.get("/most-issued-books", (req, res) => {
-  const sql = `
-    SELECT b.title, b.serial, b.author, COUNT(br.id) as issueCount
-    FROM borrow_records br
-    JOIN books b ON b.serial = br.serialNo
-    GROUP BY br.serialNo
-    ORDER BY issueCount DESC
-    LIMIT 10
-  `;
-  db.query(sql, (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json(rows || []);
-  });
+router.get("/monthly-fines", async (req, res) => {
+  try { const [rows] = await db.promise().query(`SELECT DATE_FORMAT(created_at, '%Y-%m') as month,
+              COALESCE(SUM(CASE WHEN fine_type='auto' THEN fine_amount ELSE 0 END), 0) as auto,
+              COALESCE(SUM(CASE WHEN fine_type='manual' THEN fine_amount ELSE 0 END), 0) as manual
+            FROM fines
+            WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 8 MONTH)
+            GROUP BY DATE_FORMAT(created_at, '%Y-%m')
+            ORDER BY MIN(created_at)`); res.json(rows);
+  } catch (error) { sendError(res, error); }
 });
 
-/* Students with most issues */
-router.get("/top-borrowers", (req, res) => {
-  const sql = `
-    SELECT s.rollNo, s.name, s.dept, COUNT(br.id) as borrowCount
-    FROM borrow_records br
-    JOIN students s ON s.rollNo = br.rollNo
-    GROUP BY br.rollNo
-    ORDER BY borrowCount DESC
-    LIMIT 10
-  `;
-  db.query(sql, (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json(rows || []);
-  });
+router.get('/overdue', async (req,res) => {
+  try {
+    const [rows]=await db.promise().query('SELECT i.id,i.due_date,s.registration_no,s.name,b.title book,b.accession_no,s.department FROM issues i JOIN students s ON s.id=i.student_id JOIN books b ON b.id=i.book_id WHERE i.returned=0 AND i.due_date<?',[today()]);
+    const policy=await getPolicy(db.promise());const date=today();
+    res.json(rows.map(r=>({...r,daysOverdue:daysLate(r.due_date,date),fine:fineAmount(daysLate(r.due_date,date),policy.finePerDay)})));
+  } catch(error){sendError(res,error);}
+});
+router.get('/overdue-by-dept',async(req,res)=>{
+  try{const [rows]=await db.promise().query('SELECT s.department dept,COUNT(*) overdue FROM issues i JOIN students s ON s.id=i.student_id WHERE i.returned=0 AND i.due_date<? GROUP BY s.department',[today()]);res.json(rows);}catch(error){sendError(res,error);}
 });
 
-/* Total fines collected */
-router.get("/fines-summary", (req, res) => {
-  const sql = `
-    SELECT 
-      COALESCE(SUM(fine_amount), 0) as total,
-      COALESCE(SUM(CASE WHEN status='sent' THEN fine_amount ELSE 0 END), 0) as collected
-    FROM fines
-  `;
-  db.query(sql, (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json(rows[0] || { total: 0, collected: 0 });
-  });
+router.get("/accounts-office", async (req, res) => {
+  const sql = `SELECT s.name as studentName, s.registration_no, b.accession_no,
+      f.fine_amount as fineAmount, COALESCE(NULLIF(f.reason,''), CONCAT('Late return - ', f.days_late, ' days')) as fineReason,
+      f.created_at as fineDate, CASE WHEN f.status='sent' THEN 'Sent' ELSE 'Unsent' END as fineStatus
+      FROM fines f
+      LEFT JOIN students s ON s.id = f.student_id
+      LEFT JOIN books b ON b.id = f.book_id
+      WHERE COALESCE(f.resolution_status,'pending')='pending'
+      ORDER BY f.created_at DESC`;
+  try { const [rows] = await db.promise().query(sql); res.json(rows); }
+  catch (error) { sendError(res, error); }
 });
 
-/* Monthly fines for chart */
-router.get("/monthly-fines", (req, res) => {
-  const sql = `
-    SELECT DATE_FORMAT(created_at, '%b') as month,
-      COALESCE(SUM(fine_amount), 0) as auto
-    FROM fines
-    WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 8 MONTH)
-    GROUP BY DATE_FORMAT(created_at, '%Y-%m')
-    ORDER BY MIN(created_at)
-  `;
-  db.query(sql, (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json(rows || []);
-  });
+router.get("/analytics", async (req, res) => {
+  const queries = {
+    totalFines: "SELECT COALESCE(SUM(fine_amount), 0) as v FROM fines WHERE COALESCE(resolution_status,'pending')='pending'",
+    sentFines: "SELECT COALESCE(SUM(CASE WHEN status='sent' THEN fine_amount ELSE 0 END), 0) as v FROM fines WHERE COALESCE(resolution_status,'pending')='pending'",
+    activeOverdues: "SELECT COUNT(*) as v FROM issues WHERE returned=0 AND due_date < CURDATE()",
+    totalIssues: "SELECT COUNT(*) as v FROM issues",
+  };
+  try {
+    const values = await Promise.all(Object.entries(queries).map(async ([key, sql]) => {
+      const [rows] = await db.promise().query(sql);
+      return [key, Number(rows[0]?.v || 0)];
+    }));
+    res.json(Object.fromEntries(values));
+  } catch (error) { sendError(res, error); }
 });
 
-/* Overdue books report */
-router.get("/overdue", (req, res) => {
-  const sql = `
-    SELECT s.rollNo, s.name, b.title as book, s.dept,
-      DATEDIFF(CURDATE(), br.due_date) as daysOverdue,
-      DATEDIFF(CURDATE(), br.due_date) * 10 as fine
-    FROM borrow_records br
-    JOIN students s ON s.rollNo = br.rollNo
-    JOIN books b ON b.serial = br.serialNo
-    WHERE br.status = 'issued' AND br.due_date < CURDATE()
-  `;
-  db.query(sql, (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json(rows || []);
-  });
-});
-
-/* Overdue by department */
-router.get("/overdue-by-dept", (req, res) => {
-  const sql = `
-    SELECT 
-      SUBSTRING_INDEX(s.dept, ' ', 1) as dept,
-      COUNT(*) as overdue
-    FROM borrow_records br
-    JOIN students s ON s.rollNo = br.rollNo
-    WHERE br.status = 'issued' AND br.due_date < CURDATE()
-    GROUP BY dept
-  `;
-  db.query(sql, (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json(rows || []);
-  });
-});
-
-/* Accounts office - full fines report */
-router.get("/accounts-office", (req, res) => {
-  const sql = `
-    SELECT f.id, s.name as studentName, f.rollNo, f.serialNo as bookSerial, f.fine_amount as fineAmount,
-      CONCAT(IF(f.days_late > 0, CONCAT('Overdue ', f.days_late, ' days'), 'Manual')) as fineReason,
-      f.created_at as fineDate,
-      CASE WHEN f.status='sent' THEN 'Paid' ELSE 'Unpaid' END as fineStatus
-    FROM fines f
-    LEFT JOIN students s ON s.rollNo = f.rollNo
-    ORDER BY f.created_at DESC
-  `;
-  db.query(sql, (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json(rows || []);
-  });
-});
-
-/* Export full report as Excel */
-router.get("/export/excel", (req, res) => {
-  const sql = `
-    SELECT s.name as studentName, f.rollNo, f.serialNo as bookSerial, f.fine_amount as fineAmount,
-      CONCAT(IF(f.days_late > 0, CONCAT('Overdue ', f.days_late, ' days'), 'Manual')) as fineReason,
-      f.created_at as fineDate,
-      CASE WHEN f.status='sent' THEN 'Paid' ELSE 'Unpaid' END as fineStatus
-    FROM fines f
-    LEFT JOIN students s ON s.rollNo = f.rollNo
-    ORDER BY f.created_at DESC
-  `;
-  db.query(sql, async (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    const data = rows || [];
+router.get("/export/excel", async (req, res) => {
+  try { const [rows] = await db.promise().query(`SELECT s.name as studentName, s.registration_no, b.accession_no,
+      f.fine_amount as fineAmount, COALESCE(NULLIF(f.reason,''), CONCAT('Late return - ', f.days_late, ' days')) as fineReason,
+      f.created_at as fineDate, CASE WHEN f.status='sent' THEN 'Sent' ELSE 'Unsent' END as fineStatus
+      FROM fines f LEFT JOIN students s ON s.id=f.student_id LEFT JOIN books b ON b.id=f.book_id
+      ORDER BY f.created_at DESC`);
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet("Fines Report");
     sheet.columns = [
       { header: "Student Name", key: "studentName", width: 25 },
-      { header: "Roll Number", key: "rollNo", width: 18 },
-      { header: "Book Serial", key: "bookSerial", width: 20 },
+      { header: "Registration No", key: "registration_no", width: 18 },
+      { header: "Book Accession", key: "accession_no", width: 20 },
       { header: "Amount (PKR)", key: "fineAmount", width: 14 },
       { header: "Reason", key: "fineReason", width: 20 },
       { header: "Date", key: "fineDate", width: 14 },
       { header: "Status", key: "fineStatus", width: 12 },
     ];
-    data.forEach((r) => sheet.addRow({
-      studentName: r.studentName || "",
-      rollNo: r.rollNo || "",
-      bookSerial: r.bookSerial || "",
-      fineAmount: r.fineAmount || 0,
-      fineReason: r.fineReason || "",
-      fineDate: r.fineDate ? new Date(r.fineDate).toLocaleDateString() : "",
-      fineStatus: r.fineStatus || "",
-    }));
+    (rows || []).forEach((r) => sheet.addRow(r));
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", "attachment; filename=library-report.xlsx");
     const buffer = await workbook.xlsx.writeBuffer();
     res.send(buffer);
-  });
-});
-
-
-/* Full analytics summary */
-router.get("/analytics", (req, res) => {
-  const queries = {
-    totalFines: "SELECT COALESCE(SUM(fine_amount), 0) as v FROM fines",
-    collectedFines: "SELECT COALESCE(SUM(CASE WHEN status='sent' THEN fine_amount ELSE 0 END), 0) as v FROM fines",
-    activeOverdues: "SELECT COUNT(*) as v FROM borrow_records WHERE status='issued' AND due_date < CURDATE()",
-    totalIssues: "SELECT COUNT(*) as v FROM borrow_records",
-  };
-  const out = {};
-  let done = 0;
-  const check = () => {
-    done++;
-    if (done === 4) res.json(out);
-  };
-  db.query(queries.totalFines, (e, r) => { out.totalFines = (r && r[0]?.v) || 0; check(); });
-  db.query(queries.collectedFines, (e, r) => { out.collectedFines = (r && r[0]?.v) || 0; check(); });
-  db.query(queries.activeOverdues, (e, r) => { out.activeOverdues = (r && r[0]?.v) || 0; check(); });
-  db.query(queries.totalIssues, (e, r) => { out.totalIssues = (r && r[0]?.v) || 0; check(); });
+  } catch (error) { sendError(res, error); }
 });
 
 module.exports = router;

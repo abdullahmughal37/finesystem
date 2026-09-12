@@ -1,17 +1,16 @@
 import { useState, useEffect } from "react";
 
-import { api } from "@/config";
-const API = api("/api/fines");
+import { requestJson } from "@/lib/api";
 
-type Fine = { id: number; rollNo: string; name: string; fine_amount: number; days_late: number; created_at: string; bookTitle?: string; reason?: string };
+type Fine = { id: number; registration_no: string; name: string; fine_amount: number; days_late: number; created_at: string; bookTitle?: string; reason?: string };
 
 export function FinedStudents() {
   const [unsent, setUnsent] = useState<Fine[]>([]);
   const [sent, setSent] = useState<Fine[]>([]);
 
   useEffect(() => {
-    fetch(`${API}/unsent`).then((r) => r.json()).then((rows) => setUnsent(rows || [])).catch(() => []);
-    fetch(`${API}/sent`).then((r) => r.json()).then((rows) => setSent(rows || [])).catch(() => []);
+    requestJson('/api/fines/unsent').then((rows) => setUnsent(Array.isArray(rows) ? rows : [])).catch(() => setUnsent([]));
+    requestJson('/api/fines/sent').then((rows) => setSent(Array.isArray(rows) ? rows : [])).catch(() => setSent([]));
   }, []);
 
   const FineTable = ({ data, title }: { data: Fine[]; title: string }) => (
@@ -33,7 +32,7 @@ export function FinedStudents() {
           {data.map((f) => (
             <tr key={f.id} className="hover:bg-gray-50">
               <td className="px-5 py-3 text-sm font-medium text-gray-800">{f.name}</td>
-              <td className="px-5 py-3 text-sm font-mono text-gray-600">{f.rollNo}</td>
+              <td className="px-5 py-3 text-sm font-mono text-gray-600">{f.registration_no}</td>
               <td className="px-5 py-3 text-sm font-semibold text-gray-700">PKR {Number(f.fine_amount || 0).toLocaleString()}</td>
               <td className="px-5 py-3 text-xs text-gray-500">{f.reason || (f.days_late > 0 ? `Overdue ${f.days_late} days` : "-")}</td>
               <td className="px-5 py-3 text-xs text-gray-500">{f.created_at ? new Date(f.created_at).toLocaleDateString() : "-"}</td>

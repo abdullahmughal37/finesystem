@@ -2,14 +2,14 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db");
 
-/* ISSUED STUDENTS LIST - for sidebar */
 router.get("/", (req, res) => {
   const sql = `
-    SELECT s.name, s.rollNo, br.serialNo as bookSerial, br.issue_date as issueDate, br.due_date as dueDate
-    FROM borrow_records br
-    JOIN students s ON s.rollNo = br.rollNo
-    WHERE br.status = 'issued'
-    ORDER BY br.issue_date DESC
+    SELECT s.name, s.registration_no, b.accession_no, i.issue_date, i.due_date
+    FROM issues i
+    JOIN students s ON s.id = i.student_id
+    JOIN books b ON b.id = i.book_id
+    WHERE i.returned = 0
+    ORDER BY i.issue_date DESC
   `;
   db.query(sql, (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });

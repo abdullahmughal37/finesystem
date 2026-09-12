@@ -1,114 +1,32 @@
-const express = require("express");
-const router = express.Router();
-const db = require("../db");
-
-function getFinePerDay(cb) {
-  db.query("SELECT setting_value FROM settings WHERE setting_key = 'finePerDay'", (err, rows) => {
-    const val = rows?.[0]?.setting_value;
-    cb(parseInt(val, 10) || 10);
-  });
-}
-
-/* SEARCH by rollNo OR serialNo - returns ALL active issue records */
-router.get("/search", (req, res) => {
-  const { q } = req.query;
-  if (!q || !q.trim()) return res.status(400).json({ error: "Query required" });
-  const key = q.trim();
-
-  const sql = `
-    SELECT s.rollNo, s.name as studentName, s.dept, b.title as bookTitle, b.serial as bookSerial,
-      br.issue_date as issueDate, br.due_date as dueDate, br.id as recordId
-    FROM borrow_records br
-    JOIN students s ON s.rollNo = br.rollNo
-    JOIN books b ON b.serial = br.serialNo
-    WHERE br.status = 'issued' AND (br.rollNo = ? OR br.serialNo = ?)
-    ORDER BY br.issue_date ASC
-  `;
-  // NOTE: LIMIT 1 removed — now returns ALL active records for this student/serial
-
-  db.query(sql, [key, key], (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    if (!rows || rows.length === 0) return res.json({ found: false });
-
-    getFinePerDay((finePerDay) => {
-      const today = new Date();
-      const records = rows.map((r) => {
-        const due = new Date(r.dueDate);
-        const daysPassed = Math.floor((today - due) / (1000 * 60 * 60 * 24));
-        const daysLate = Math.max(0, daysPassed);
-        // Format dates as readable strings so frontend doesn't get raw MySQL date objects
-        const formatDate = (d) => d ? new Date(d).toLocaleDateString("en-PK") : "";
-        return {
-          rollNo: r.rollNo,
-          studentName: r.studentName,
-          dept: r.dept,
-          bookTitle: r.bookTitle,
-          bookSerial: r.bookSerial,
-          issueDate: formatDate(r.issueDate),
-          dueDate: formatDate(r.dueDate),
-          recordId: r.recordId,
-          daysPassed,
-          daysLate,
-          fineAmount: daysLate * finePerDay,
-        };
-      });
-
-      res.json({ found: true, records });
+const express=require('express');
+const router=express.Router();
+const db=require('../db');
+const {transaction,sendError}=require('../lib/database');
+const {ValidationError,clean}=require('../lib/records');
+const {today,daysLate,getPolicy,fineAmount}=require('../lib/policy');
+for(const mode of ['student','book'])router.get(`/issues/${mode}/:key`,async(req,res)=>{
+  try{
+    const key=clean(req.params.key).toUpperCase();
+    if(!key)throw new ValidationError('Enter a registration or accession number.');
+    const [rows]=await db.promise().query(`SELECT i.*,s.name student_name,s.registration_no,b.title book_title,b.accession_no FROM issues i JOIN students s ON s.id=i.student_id JOIN books b ON b.id=i.book_id WHERE ${mode==='student'?'s.registration_no':'b.accession_no'}=? AND i.returned=0 ORDER BY i.issue_date`,[key]);
+    const policy=await getPolicy(db.promise());const date=today();
+    res.json({records:rows.map(r=>{const overdueDays=daysLate(r.due_date,date);return {issueId:r.id,studentName:r.student_name,registrationNo:r.registration_no,bookTitle:r.book_title,accessionNo:r.accession_no,issueDate:r.issue_date,dueDate:r.due_date,status:overdueDays?'Overdue':'On Time',overdueDays,fineAmount:fineAmount(overdueDays,policy.finePerDay),finePerDay:policy.finePerDay};})});
+  }catch(error){sendError(res,error);}
+});
+router.post('/return/:issueId',async(req,res)=>{
+  try{
+    const id=Number(req.params.issueId);if(!Number.isSafeInteger(id)||id<1)throw new ValidationError('Invalid issue ID.');
+    const result=await transaction(async connection=>{
+      const [rows]=await connection.query('SELECT * FROM issues WHERE id=? FOR UPDATE',[id]);
+      if(!rows.length)throw new ValidationError('Issue not found.',404);
+      const issue=rows[0];
+      if(Number(issue.returned)===1)return {success:true,alreadyReturned:true};
+      const policy=await getPolicy(connection);const date=today();const overdueDays=daysLate(issue.due_date,date);const amount=fineAmount(overdueDays,policy.finePerDay);
+      if(amount>0)await connection.query("INSERT INTO fines (issue_id,student_id,book_id,days_late,fine_amount,fine_type,reason,status) VALUES (?,?,?,?,?,'auto',?,'unsent')",[id,issue.student_id,issue.book_id,overdueDays,amount,`Late return - ${overdueDays} day${overdueDays===1?'':'s'}`]);
+      await connection.query('UPDATE issues SET returned=1,return_date=? WHERE id=?',[date,id]);
+      return {success:true,fineGenerated:amount>0,overdueDays,fineAmount:amount};
     });
-  });
+    res.json(result);
+  }catch(error){sendError(res,error);}
 });
-
-/* RETURN BOOK */
-router.post("/return", (req, res) => {
-  const { recordId } = req.body;
-  if (!recordId) return res.status(400).json({ error: "recordId required" });
-
-  db.query(
-    "SELECT * FROM borrow_records WHERE id = ? AND status = 'issued'",
-    [recordId],
-    (err, rows) => {
-      if (err) return res.status(500).json({ error: err.message });
-      if (!rows || rows.length === 0)
-        return res.status(400).json({ error: "Record not found or already returned" });
-
-      const rec = rows[0];
-      const due = new Date(rec.due_date);
-      const today = new Date();
-      const daysLate = Math.max(0, Math.floor((today - due) / (1000 * 60 * 60 * 24)));
-
-      getFinePerDay((finePerDay) => {
-        const fineAmount = daysLate * finePerDay;
-
-        db.query(
-          "UPDATE borrow_records SET return_date = CURDATE(), status = 'returned' WHERE id = ?",
-          [recordId],
-          (err2) => {
-            if (err2) return res.status(500).json({ error: err2.message });
-
-            db.query(
-              "UPDATE books SET available = available + 1 WHERE serial = ?",
-              [rec.serialNo],
-              (err3) => {
-                if (err3) return res.status(500).json({ error: err3.message });
-
-                if (daysLate > 0) {
-                  db.query(
-                    "INSERT INTO fines (rollNo, serialNo, days_late, fine_amount, status) VALUES (?, ?, ?, ?, 'unsent')",
-                    [rec.rollNo, rec.serialNo, daysLate, fineAmount],
-                    () => {
-                      res.json({ success: true, fineGenerated: true, fineAmount });
-                    }
-                  );
-                } else {
-                  res.json({ success: true, fineGenerated: false, fineAmount: 0 });
-                }
-              }
-            );
-          }
-        );
-      });
-    }
-  );
-});
-
-module.exports = router;
+module.exports=router;

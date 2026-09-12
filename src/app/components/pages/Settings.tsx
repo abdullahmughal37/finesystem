@@ -1,11 +1,16 @@
 import React, { useState, useEffect } from "react";
-import { Save, Shield, BookOpen, DollarSign, Database, Code2, Upload } from "lucide-react";
-import axios from "axios";
+import { Save, Shield, BookOpen, DollarSign, Database, Code2, Upload, Columns3, FileCheck2 } from "lucide-react";
 import { api } from "@/config";
+import { downloadFile, jsonBody, requestJson } from '@/lib/api';
 
-type TabKey = "general" | "fines" | "security" | "backup" | "developers";
+import { AccountSettings } from '../catalog/AccountSettings';
+import { FieldLayoutEditor } from '../catalog/FieldLayoutEditor';
+import { ClearanceTemplateEditor } from '../catalog/ClearanceTemplateEditor';
+
+type TabKey = "student-fields" | "book-fields" | "general" | "fines" | "clearance" | "security" | "backup" | "developers";
 
 const developers = [
+  { name: "Mudassar Khan", role: "Project Supervisor", roll: "" },
   { name: "Muhammad Abdullah", roll: "084" },
   { name: "Ali Hasnain", roll: "140" },
   { name: "Dawood Tahir", roll: "133" },
@@ -13,9 +18,11 @@ const developers = [
 
 export function Settings() {
   const [activeTab, setActiveTab] = useState<TabKey>("general");
+  const [layoutDirty,setLayoutDirty]=useState(false);
+  const isLayout=activeTab==="student-fields"||activeTab==="book-fields";
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [settings, setSettings] = useState<Record<string, string>>({});
+  const [error, setError] = useState("");
   const [form, setForm] = useState({
     universityName: "",
     address: "",
@@ -32,7 +39,6 @@ export function Settings() {
     fetch(api("/api/settings"))
       .then((r) => r.json())
       .then((s) => {
-        setSettings(s);
         setForm({
           universityName: s.universityName || "COMSATS University Islamabad",
           address: s.address || "",
@@ -49,10 +55,13 @@ export function Settings() {
   }, []);
 
   const handleSave = async () => {
-    await axios.post(api("/api/settings"), form);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
-    window.dispatchEvent(new Event("settings-updated"));
+    setError("");
+    try {
+      await requestJson('/api/settings', { method: 'POST', ...jsonBody(form) });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+      window.dispatchEvent(new Event("settings-updated"));
+    } catch (error) { setError((error as Error).message); }
   };
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -60,30 +69,37 @@ export function Settings() {
     if (!file) return;
     const fd = new FormData();
     fd.append("logo", file);
-    const res = await axios.post(api("/api/settings/logo"), fd);
-    if (res.data?.logoUrl) {
-      setForm((f) => ({ ...f, logoUrl: res.data.logoUrl }));
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2500);
-      window.dispatchEvent(new Event("settings-updated"));
-      window.location.reload();
-    }
+    setError("");
+    try {
+      const data = await requestJson('/api/settings/logo', { method: 'POST', body: fd });
+      if (data?.logoUrl) {
+        setForm((f) => ({ ...f, logoUrl: data.logoUrl }));
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2500);
+        window.dispatchEvent(new Event("settings-updated"));
+        window.location.reload();
+      }
+    } catch (error) { setError((error as Error).message); }
   };
 
   const handleDeleteAll = async () => {
     if (!window.confirm("Delete ALL data? This cannot be undone.")) return;
     setDeleting(true);
     try {
-      await axios.post(api("/api/backup/delete-all"));
+      await requestJson('/api/backup/delete-all', { method: 'POST' });
       window.location.reload();
-    } catch {
+    } catch (error) {
+      setError((error as Error).message);
       setDeleting(false);
     }
   };
 
   const tabs: { key: TabKey; label: string; icon: React.ElementType }[] = [
     { key: "general", label: "General", icon: BookOpen },
+    { key: "student-fields", label: "Student fields", icon: Columns3 },
+    { key: "book-fields", label: "Book fields", icon: Columns3 },
     { key: "fines", label: "Fine Policy", icon: DollarSign },
+    { key: "clearance", label: "Clearance Letter", icon: FileCheck2 },
     { key: "security", label: "Security", icon: Shield },
     { key: "backup", label: "Backup & Data", icon: Database },
     { key: "developers", label: "Developers", icon: Code2 },
@@ -98,14 +114,15 @@ export function Settings() {
           <h1 className="text-gray-800">Settings</h1>
           <p className="text-sm text-gray-500 mt-0.5">Configure library system</p>
         </div>
-        <button
+        {(activeTab === "general" || activeTab === "fines") && <button
           onClick={handleSave}
           className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm text-white font-medium ${saved ? "bg-emerald-500" : ""}`}
           style={!saved ? { background: "linear-gradient(135deg, #1F3A8A, #3B82F6)" } : {}}
         >
           <Save size={15} /> {saved ? "Saved!" : "Save Changes"}
-        </button>
+        </button>}
       </div>
+      {error && <p role="alert" className="text-sm text-red-700 bg-red-50 p-3 rounded-lg">{error}</p>}
 
       <div className="flex flex-col lg:flex-row gap-5">
         <div className="lg:w-52 flex-shrink-0">
@@ -113,7 +130,7 @@ export function Settings() {
             {tabs.map(({ key, label, icon: Icon }) => (
               <button
                 key={key}
-                onClick={() => setActiveTab(key)}
+                onClick={() => {if(key===activeTab)return;if(!layoutDirty||window.confirm('Discard unsaved layout changes?'))setActiveTab(key);}}
                 className={`w-full flex items-center gap-3 px-4 py-3 text-sm border-b last:border-0
                   ${activeTab === key ? "text-white" : "text-gray-600 hover:bg-gray-50"}`}
                 style={activeTab === key ? { background: "linear-gradient(135deg, #1F3A8A, #3B82F6)" } : {}}
@@ -125,7 +142,9 @@ export function Settings() {
           </div>
         </div>
 
-        <div className="flex-1 space-y-4">
+        <div className="flex-1 min-w-0 space-y-4">
+          {isLayout && <FieldLayoutEditor key={activeTab} kind={activeTab==="student-fields"?"students":"books"} onDirtyChange={setLayoutDirty}/>}
+          {activeTab === "clearance" && <ClearanceTemplateEditor />}
           {activeTab === "general" && (
             <div className="bg-white rounded-xl border p-6 space-y-5">
               <h3 className="text-gray-800 pb-3 border-b">Library Information</h3>
@@ -182,27 +201,17 @@ export function Settings() {
             </div>
           )}
 
-          {activeTab === "security" && (
-            <div className="bg-white rounded-xl border p-6 space-y-5">
-              <h3 className="text-gray-800 pb-3 border-b">Security</h3>
-              <p className="text-sm text-gray-600">Admin email and password managed via database. Enable 2FA (OTP) below.</p>
-              <div>
-                <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={form.enable2FA === "1"} onChange={(e) => setForm({ ...form, enable2FA: e.target.checked ? "1" : "0" })} />
-                  <span className="text-sm">Enable 2FA (OTP via email)</span>
-                </label>
-              </div>
-            </div>
-          )}
+          {activeTab === "security" && <AccountSettings/>}
 
           {activeTab === "backup" && (
             <div className="bg-white rounded-xl border p-6 space-y-5">
               <h3 className="text-gray-800 pb-3 border-b">Data Backup</h3>
+              <p className="text-sm text-gray-600">CSV exports are suitable for review and transfer. The SQL file backs up application data and settings for restoration into an initialized installation; keep it private because it contains student records.</p>
               <div className="flex flex-wrap gap-3">
-                <a href={api("/api/backup/sql")} className="px-4 py-2 rounded-lg text-sm text-white bg-blue-600 hover:bg-blue-700">Backup Database (SQL)</a>
-                <a href={api("/api/backup/students.csv")} className="px-4 py-2 border rounded-lg text-sm">Export Students CSV</a>
-                <a href={api("/api/backup/books.csv")} className="px-4 py-2 border rounded-lg text-sm">Export Books CSV</a>
-                <a href={api("/api/fines/export/csv")} className="px-4 py-2 border rounded-lg text-sm">Export Fines CSV</a>
+                <button onClick={() => downloadFile('/api/backup/sql','library-data-backup.sql').catch(error => setError(error.message))} className="px-4 py-2 rounded-lg text-sm text-white bg-blue-600 hover:bg-blue-700">Download Data Backup (SQL)</button>
+                <button onClick={() => downloadFile('/api/backup/students.csv','students.csv').catch(error => setError(error.message))} className="px-4 py-2 border rounded-lg text-sm">Export Students CSV</button>
+                <button onClick={() => downloadFile('/api/backup/books.csv','books.csv').catch(error => setError(error.message))} className="px-4 py-2 border rounded-lg text-sm">Export Books CSV</button>
+                <button onClick={() => downloadFile('/api/fines/export/csv','fines-export.csv').catch(error => setError(error.message))} className="px-4 py-2 border rounded-lg text-sm">Export Fines CSV</button>
               </div>
               <div className="border-t pt-4 mt-4">
                 <p className="text-sm font-semibold text-red-700 mb-2">Danger Zone</p>
@@ -215,13 +224,14 @@ export function Settings() {
 
           {activeTab === "developers" && (
             <div className="bg-white rounded-xl border p-6">
-              <h3 className="text-gray-800 pb-3 border-b">Developers</h3>
+              <h3 className="text-gray-800 pb-3 border-b">Supervisor & Developers</h3>
               <div className="space-y-3 mt-4">
                 {developers.map((d) => (
                   <div key={d.name} className="flex items-center gap-4 p-3 bg-gray-50 rounded-lg">
                     <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm">{d.name.charAt(0)}</div>
                     <div>
                       <p className="font-semibold text-gray-800">{d.name}</p>
+                      {'role' in d && d.role && <p className="text-sm text-blue-700">{d.role}</p>}
                       {d.roll && <p className="text-sm text-gray-500">({d.roll})</p>}
                     </div>
                   </div>

@@ -1,72 +1,40 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../db");
+const { authMiddleware } = require('../middleware/auth');
 
-router.get("/sql", (req, res) => {
-  const tables = ["students", "books", "borrow_records", "fines"];
-  let output = `-- Library DB Backup\n-- Generated ${new Date().toISOString()}\n\n`;
-  let done = 0;
+router.use(authMiddleware);
 
-  const next = (table, rows) => {
-    if (!rows || rows.length === 0) { done++; check(); return; }
-    const cols = Object.keys(rows[0]);
-    output += `\n-- Table: ${table}\n`;
-    rows.forEach((r) => {
-      const vals = cols.map((c) => {
-        const v = r[c];
-        if (v === null) return "NULL";
-        if (typeof v === "number") return v;
-        return `'${String(v).replace(/'/g, "''")}'`;
-      });
-      output += `INSERT INTO ${table} (${cols.join(",")}) VALUES (${vals.join(",")});\n`;
-    });
-    output += "\n";
-    done++;
-    check();
-  };
-
-  const check = () => {
-    if (done >= tables.length) {
-      res.setHeader("Content-Type", "application/sql");
-      res.setHeader("Content-Disposition", "attachment; filename=library_db_backup.sql");
-      res.send(output);
+router.get("/sql", async (req, res) => {
+  const tables = ["students", "books", "issues", "fines", "fine_deletions", "catalog_layouts", "settings", "clearance_templates", "clearance_sequences", "clearance_letters"];
+  try {
+    let output = `-- Library data backup\n-- Generated ${new Date().toISOString()}\n-- Restore into an initialized Library Management System database.\n\nSET NAMES utf8mb4;\nSET FOREIGN_KEY_CHECKS=0;\nSTART TRANSACTION;\n`;
+    for (const table of tables) {
+      const [rows] = await db.promise().query(`SELECT * FROM ${table}`);
+      for (const row of rows) {
+        const columns = Object.keys(row);
+        output += `INSERT INTO \`${table}\` (${columns.map(column => `\`${column}\``).join(',')}) VALUES (${columns.map(column => db.escape(row[column])).join(',')});\n`;
+      }
     }
-  };
-
-  tables.forEach((t) => {
-    db.query(`SELECT * FROM ${t}`, (err, rows) => {
-      if (err) { done++; check(); return; }
-      next(t, rows || []);
-    });
-  });
+    output += 'COMMIT;\nSET FOREIGN_KEY_CHECKS=1;\n';
+    res.type('application/sql').attachment('library-data-backup.sql').send(output);
+  } catch (error) {
+    require('../lib/database').sendError(res, error);
+  }
 });
 
-router.get("/students.csv", (req, res) => {
-  db.query("SELECT * FROM students", (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    const cols = ["id", "rollNo", "name", "email", "dept", "semester", "status", "enrolled"];
-    const header = cols.join(",") + "\n";
-    const csv = header + (rows || []).map((r) => cols.map((c) => `"${String(r[c] || "").replace(/"/g, '""')}"`).join(",")).join("\n");
-    res.setHeader("Content-Type", "text/csv");
-    res.setHeader("Content-Disposition", "attachment; filename=students.csv");
-    res.send("\uFEFF" + csv);
-  });
-});
-
-router.get("/books.csv", (req, res) => {
-  db.query("SELECT * FROM books", (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    const cols = ["id", "title", "author", "isbn", "serial", "category", "total", "available"];
-    const header = cols.join(",") + "\n";
-    const csv = header + (rows || []).map((r) => cols.map((c) => `"${String(r[c] || "").replace(/"/g, '""')}"`).join(",")).join("\n");
-    res.setHeader("Content-Type", "text/csv");
-    res.setHeader("Content-Disposition", "attachment; filename=books.csv");
-    res.send("\uFEFF" + csv);
-  });
+for(const kind of ['students','books']) router.get('/'+kind+'.csv',async(req,res)=>{
+  try {
+    const layout=await require('../lib/layouts').getLayout(kind);
+    const [rows]=await db.promise().query('SELECT * FROM '+kind+' ORDER BY id');
+    const fields=layout.fields.filter(f=>!f.archived);
+    const {customValues}=require('../lib/fieldSchema');
+    res.type('text/csv').attachment(kind+'.csv').send(require('../lib/records').csvText(fields.map(f=>f.label),rows.map(row=>{const values={...customValues(row),...row};return fields.map(f=>values[f.key]);})));
+  }catch(e){require('../lib/database').sendError(res,e);}
 });
 
 router.post("/delete-all", (req, res) => {
-  const tables = ["fines", "borrow_records", "books", "students"];
+  const tables = ["clearance_letters", "clearance_sequences", "clearance_templates", "fine_deletions", "fines", "issues", "books", "students"];
   let i = 0;
   const next = () => {
     if (i >= tables.length) return res.json({ success: true });

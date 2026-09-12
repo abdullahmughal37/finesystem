@@ -1,87 +1,58 @@
-const express = require("express");
+const express = require('express');
+const nodemailer = require('nodemailer');
 const router = express.Router();
-const db = require("../db");
+const db = require('../db');
+const config = require('../config');
+const { authMiddleware } = require('../middleware/auth');
+const { sendError } = require('../lib/database');
 
-router.get("/overdue", (req, res) => {
-  const sql = `
-    SELECT s.rollNo, s.name, s.email, b.title as book, br.due_date as dueDate,
-      DATEDIFF(CURDATE(), br.due_date) as daysOverdue
-    FROM borrow_records br
-    JOIN students s ON s.rollNo = br.rollNo
-    JOIN books b ON b.serial = br.serialNo
-    WHERE br.status = 'issued' AND br.due_date < CURDATE()
-  `;
-  db.query(sql, (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json(rows || []);
-  });
+router.use(authMiddleware);
+
+const overdueSql = `
+  SELECT s.registration_no, s.name, s.email, b.title AS book,
+    DATE_FORMAT(i.due_date, '%Y-%m-%d') AS dueDate,
+    DATEDIFF(CURDATE(), i.due_date) AS daysOverdue
+  FROM issues i
+  JOIN students s ON s.id = i.student_id
+  JOIN books b ON b.id = i.book_id
+  WHERE i.returned = 0 AND i.due_date < CURDATE()
+  ORDER BY i.due_date, s.registration_no
+`;
+
+const validEmail = value => /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/.test(String(value || '').trim());
+const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
+
+router.get('/overdue', async (req, res) => {
+  try {
+    const [rows] = await db.promise().query(overdueSql);
+    res.json(rows);
+  } catch (error) { sendError(res, error); }
 });
 
-
-
-
-// // ↓ ADD THIS HERE ↓
-// router.get("/test-email", (req, res) => {
-//   const nodemailer = require("nodemailer");
-//   const config = require("../config");
-//   console.log("SMTP USER:", config.smtp.user);
-//   console.log("SMTP PASS length:", config.smtp.pass?.length);
-//   const transporter = nodemailer.createTransport({
-//     host: "smtp.gmail.com",
-//     port: 587,
-//     secure: false,
-//     auth: { user: config.smtp.user, pass: config.smtp.pass },
-//      tls: { rejectUnauthorized: false },
-//   });
-//   transporter.verify((err) => {
-//     if (err) return res.json({ ok: false, error: err.message });
-//     res.json({ ok: true, message: "SMTP connected successfully!" });
-//   });
-// });
-// // ↑ A
-
-
-
-
-
-
-router.post("/send", (req, res) => {
-  db.query(`
-    SELECT s.email, s.name, b.title, br.due_date
-    FROM borrow_records br
-    JOIN students s ON s.rollNo = br.rollNo
-    JOIN books b ON b.serial = br.serialNo
-    WHERE br.status = 'issued' AND br.due_date < CURDATE()
-  `, (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    const nodemailer = require("nodemailer");
-    const config = require("../config");
-    if (!config.smtp?.user) {
-      return res.json({ success: true, count: 0, message: "Email not configured" });
+router.post('/send', async (req, res) => {
+  try {
+    if (!config.smtp.host || !config.smtp.user || !config.smtp.pass) {
+      return res.status(503).json({ error: 'Reminder email is not configured. Add SMTP_HOST, SMTP_USER, and SMTP_PASS on the server.' });
     }
+    const [rows] = await db.promise().query(overdueSql);
+    const deliverable = rows.filter(row => validEmail(row.email));
+    const skipped = rows.length - deliverable.length;
     const transporter = nodemailer.createTransport({
       host: config.smtp.host,
       port: config.smtp.port,
-      secure: false,
+      secure: config.smtp.port === 465,
       auth: { user: config.smtp.user, pass: config.smtp.pass },
     });
-    let sent = 0;
-    const promises = (rows || []).map((r) => {
-      const html = `
-        <p>Dear ${r.name},</p>
-        <p>This is a reminder that your borrowed book "<strong>${r.title}</strong>" was due on ${new Date(r.due_date).toLocaleDateString()}.</p>
-        <p>Please return it at your earliest convenience to avoid fines.</p>
-        <p>Library Management System</p>
-      `;
-      return transporter.sendMail({
-        from: config.smtp.user,
-        to: r.email,
-        subject: "Library – Overdue Book Reminder",
-        html,
-      }).then(() => { sent++; }).catch(() => {});
-    });
-    Promise.all(promises).then(() => res.json({ success: true, count: sent }));
-  });
+    const results = await Promise.allSettled(deliverable.map(row => transporter.sendMail({
+      from: config.smtp.user,
+      to: row.email,
+      subject: 'Library - Overdue Book Reminder',
+      html: `<p>Dear ${escapeHtml(row.name)},</p><p>Your borrowed book <strong>${escapeHtml(row.book)}</strong> was due on ${escapeHtml(row.dueDate)}.</p>`,
+    })));
+    const sent = results.filter(result => result.status === 'fulfilled').length;
+    const failed = results.length - sent;
+    res.status(failed ? 502 : 200).json({ success: failed === 0, sent, failed, skipped, total: rows.length, message: failed ? 'Some reminder emails could not be delivered.' : 'Reminder emails processed.' });
+  } catch (error) { sendError(res, error); }
 });
 
 module.exports = router;

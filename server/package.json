@@ -4,8 +4,10 @@
   "description": "",
   "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node server.js"
+    "test": "node --test tests/records.test.cjs tests/clearance.test.cjs",
+    "start": "node server.js",
+    "seed:admin": "node scripts/seed-admin.js",
+    "test:integration": "node --test tests/modules.integration.cjs"
   },
   "keywords": [],
   "author": "",
@@ -22,9 +24,14 @@
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.1.1",
     "mysql2": "^3.19.1",
-    "nodemailer": "^6.9.7"
+    "nodemailer": "^10.0.9",
+    "pdfkit": "^0.17.2",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"
+  },
+  "overrides": {
+    "uuid": "11.1.1"
   }
 }

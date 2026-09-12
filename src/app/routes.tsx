@@ -12,15 +12,19 @@ import { Reports } from "./components/pages/Reports";
 import { Settings } from "./components/pages/Settings";
 import { ReminderEmails } from "./components/pages/ReminderEmails";
 import { IssuedStudents } from "./components/pages/IssuedStudents";
+import { Clearance } from "./components/pages/Clearance";
+import { VerifyClearance } from "./components/pages/VerifyClearance";
+import { useAuth } from "./contexts/AuthContext";
 
 function ProtectedLayout() {
-  const token = localStorage.getItem("library_token");
-  if (!token) return <Navigate to="/login" replace />;
+  const { isAuthenticated } = useAuth();
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
   return <Layout />;
 }
 
 export const router = createBrowserRouter([
   { path: "/login", Component: Login },
+  { path: "/verify/:reference", Component: VerifyClearance },
   {
     path: "/",
     Component: ProtectedLayout,
@@ -32,6 +36,7 @@ export const router = createBrowserRouter([
       { path: "return-book", Component: ReturnBook },
       { path: "issued-students", Component: IssuedStudents},
       { path: "fines", Component: Fines },
+      { path: "clearance", Component: Clearance },
       { path: "reports", Component: Reports },
       { path: "reminder-emails", Component: ReminderEmails },
       { path: "settings", Component: Settings },

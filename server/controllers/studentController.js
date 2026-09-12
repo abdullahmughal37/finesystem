@@ -1,86 +1,25 @@
-const db = require("../db");
-
-// GET all students
-exports.getStudents = (req, res) => {
-  const sql = "SELECT * FROM students";
-
-  db.query(sql, (err, result) => {
-    if (err) {
-      return res.status(500).json(err);
-    }
-
-    res.json(result);
-  });
+const db = require('../db');
+const { save, remove, pageOptions } = require('../lib/catalog');
+const { sendError } = require('../lib/database');
+exports.getStudents = async (req, res) => {
+  try {
+    const { page, limit, offset, search } = pageOptions(req.query);
+    const where = search ? "WHERE name LIKE ? OR registration_no LIKE ? OR email LIKE ? OR department LIKE ? OR contact_no LIKE ? OR JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.*')) LIKE ?" : '';
+    const args = search ? Array(6).fill(`%${search}%`) : [];
+    const [count] = await db.promise().query(`SELECT COUNT(*) AS total FROM students ${where}`, args);
+    const [rows] = await db.promise().query(`SELECT * FROM students ${where} ORDER BY id DESC LIMIT ? OFFSET ?`, [...args, limit, offset]);
+    res.json({ rows, total: count[0].total, page, limit });
+  } catch (error) { sendError(res, error); }
 };
-
-
-// ADD student
-exports.addStudent = (req, res) => {
-
-  const { rollNo, name, email, dept, semester, status, enrolled } = req.body;
-
-  const sql = `
-  INSERT INTO students 
-  (rollNo, name, email, dept, semester, status, enrolled)
-  VALUES (?, ?, ?, ?, ?, ?, ?)
-  `;
-
-  db.query(
-    sql,
-    [rollNo, name, email, dept, semester, status, enrolled],
-    (err, result) => {
-
-      if (err) {
-        return res.status(500).json(err);
-      }
-
-      res.json({ message: "Student added successfully" });
-    }
-  );
+exports.addStudent = async (req, res) => {
+  try { const id = await save('students', req.body); res.status(201).json({ success: true, id, message: 'Student added successfully.' }); }
+  catch (error) { sendError(res, error); }
 };
-
-
-// DELETE student
-exports.deleteStudent = (req, res) => {
-
-  const id = req.params.id;
-
-  const sql = "DELETE FROM students WHERE id=?";
-
-  db.query(sql, [id], (err, result) => {
-
-    if (err) {
-      return res.status(500).json(err);
-    }
-
-    res.json({ message: "Student deleted successfully" });
-
-  });
+exports.updateStudent = async (req, res) => {
+  try { await save('students', req.body, Number(req.params.id)); res.json({ success: true, message: 'Student updated successfully.' }); }
+  catch (error) { sendError(res, error); }
 };
-exports.updateStudent = (req, res) => {
-
-  const id = req.params.id;
-
-  const { rollNo, name, email, dept, semester, status, enrolled } = req.body;
-
-  const sql = `
-  UPDATE students
-  SET rollNo=?, name=?, email=?, dept=?, semester=?, status=?, enrolled=?
-  WHERE id=?
-  `;
-
-  db.query(
-    sql,
-    [rollNo, name, email, dept, semester, status, enrolled, id],
-    (err, result) => {
-
-      if (err) {
-        return res.status(500).json(err);
-      }
-
-      res.json({ message: "Student updated successfully" });
-
-    }
-  );
-
+exports.deleteStudent = async (req, res) => {
+  try { await remove('students', Number(req.params.id)); res.json({ success: true }); }
+  catch (error) { sendError(res, error); }
 };

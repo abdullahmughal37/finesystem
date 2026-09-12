@@ -1,4 +1,4 @@
-require("dotenv").config();
+require("dotenv").config({ path: require("path").join(__dirname, ".env") });
 
 module.exports = {
   db: {
@@ -19,7 +19,7 @@ module.exports = {
     pass: process.env.SMTP_PASS,
   },
   rateLimit: {
-    maxAttempts: 5,
-    lockoutMinutes: 15,
+    maxAttempts: 25,
+    lockoutMinutes: 1,
   },
 };

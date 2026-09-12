@@ -1,0 +1,12 @@
+import React, { useEffect, useState } from 'react';
+import { useParams } from 'react-router';
+import { BadgeCheck, ShieldX } from 'lucide-react';
+import { api } from '@/config';
+
+type Result={valid:boolean;referenceNumber:string;status:string;studentName:string;registrationNumber:string;purpose:string;issuedAt:string;revokedAt?:string;error?:string};
+
+export function VerifyClearance(){
+ const {reference=''}=useParams();const [result,setResult]=useState<Result|null>(null);const [error,setError]=useState('');
+ useEffect(()=>{fetch(api(`/api/clearance/verify/${encodeURIComponent(reference)}`)).then(async response=>{const data=await response.json().catch(()=>null);if(!response.ok)throw new Error(data?.error||'Unable to verify this reference.');return data;}).then(setResult).catch(e=>setError(e.message));},[reference]);
+ return <main className="min-h-screen bg-slate-100 flex items-center justify-center p-4"><section className="bg-white border rounded-2xl shadow-xl w-full max-w-lg p-7 text-center">{!result&&!error&&<p className="text-gray-500">Verifying clearance reference…</p>}{error&&<><ShieldX size={54} className="mx-auto text-red-600"/><h1 className="text-xl font-bold text-red-800 mt-3">Reference not verified</h1><p className="text-sm text-gray-600 mt-2">{error}</p><p className="font-mono text-xs mt-4 text-gray-500">{reference}</p></>}{result&&<><div className={`w-16 h-16 mx-auto rounded-full flex items-center justify-center ${result.valid?'bg-emerald-100':'bg-red-100'}`}>{result.valid?<BadgeCheck size={38} className="text-emerald-700"/>:<ShieldX size={38} className="text-red-700"/>}</div><h1 className={`text-xl font-bold mt-3 ${result.valid?'text-emerald-800':'text-red-800'}`}>{result.valid?'Valid library clearance':'Clearance letter revoked'}</h1><dl className="text-left border rounded-xl divide-y mt-5">{[['Reference',result.referenceNumber],['Student',result.studentName],['Registration',result.registrationNumber],['Purpose',result.purpose],['Issued',new Date(result.issuedAt).toLocaleString()],['Status',result.status.toUpperCase()]].map(([label,value])=><div key={label} className="grid grid-cols-[120px_1fr] p-3 text-sm"><dt className="text-gray-500">{label}</dt><dd className="font-medium break-words">{value}</dd></div>)}</dl>{!result.valid&&<p className="text-sm text-red-700 mt-4">This document must not be accepted as an active clearance.</p>}</>}</section></main>;
+}

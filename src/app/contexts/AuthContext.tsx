@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback } from "react";
+import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
 import { api } from "@/config";
 const TOKEN_KEY = "library_token";
 const USER_KEY = "library_user";
@@ -31,6 +31,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setToken(null);
     setUser(null);
   }, []);
+
+  useEffect(() => {
+    window.addEventListener('library-session-expired', logout);
+    return () => window.removeEventListener('library-session-expired', logout);
+  }, [logout]);
 
   const login = useCallback(async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     try {
