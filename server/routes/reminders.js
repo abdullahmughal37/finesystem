@@ -8,6 +8,18 @@ const { sendError } = require('../lib/database');
 
 router.use(authMiddleware);
 
+const smtpConfigured = () => Boolean(config.smtp.host && config.smtp.user && config.smtp.pass);
+
+router.get('/status', (_req, res) => {
+  const configured = smtpConfigured();
+  res.json({
+    configured,
+    message: configured
+      ? 'Reminder email delivery is configured.'
+      : 'Reminder email delivery is not configured. Add SMTP_HOST, SMTP_USER, and SMTP_PASS on the server.',
+  });
+});
+
 const overdueSql = `
   SELECT s.registration_no, s.name, s.email, b.title AS book,
     DATE_FORMAT(i.due_date, '%Y-%m-%d') AS dueDate,
@@ -31,7 +43,7 @@ router.get('/overdue', async (req, res) => {
 
 router.post('/send', async (req, res) => {
   try {
-    if (!config.smtp.host || !config.smtp.user || !config.smtp.pass) {
+    if (!smtpConfigured()) {
       return res.status(503).json({ error: 'Reminder email is not configured. Add SMTP_HOST, SMTP_USER, and SMTP_PASS on the server.' });
     }
     const [rows] = await db.promise().query(overdueSql);

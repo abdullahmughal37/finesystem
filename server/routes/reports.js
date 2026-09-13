@@ -16,8 +16,8 @@ router.get("/issued-monthly", async (req, res) => {
 
 router.get("/monthly-fines", async (req, res) => {
   try { const [rows] = await db.promise().query(`SELECT DATE_FORMAT(created_at, '%Y-%m') as month,
-              COALESCE(SUM(CASE WHEN fine_type='auto' THEN fine_amount ELSE 0 END), 0) as auto,
-              COALESCE(SUM(CASE WHEN fine_type='manual' THEN fine_amount ELSE 0 END), 0) as manual
+              COALESCE(SUM(CASE WHEN fine_type='auto' THEN fine_amount ELSE 0 END), 0) as \`auto\`,
+              COALESCE(SUM(CASE WHEN fine_type='manual' THEN fine_amount ELSE 0 END), 0) as \`manual\`
             FROM fines
             WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 8 MONTH)
             GROUP BY DATE_FORMAT(created_at, '%Y-%m')
