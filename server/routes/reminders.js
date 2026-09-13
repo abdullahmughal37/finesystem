@@ -20,6 +20,17 @@ const createSmtpTransport = () => nodemailer.createTransport({
   socketTimeout: 15000,
 });
 
+const smtpFailureMessage = error => {
+  const code = String(error?.code || '').toUpperCase();
+  if (code === 'EAUTH') {
+    return 'The email provider rejected the SMTP username or app password.';
+  }
+  if (['ETIMEDOUT', 'ECONNECTION', 'ESOCKET', 'ECONNREFUSED', 'ENETUNREACH'].includes(code)) {
+    return 'This server cannot reach the SMTP provider. Enable outbound SMTP on the hosting plan or use an HTTPS email service.';
+  }
+  return 'The server could not verify the email delivery connection.';
+};
+
 router.get('/status', async (_req, res) => {
   const configured = smtpConfigured();
   if (!configured) {
@@ -37,11 +48,11 @@ router.get('/status', async (_req, res) => {
       verified: true,
       message: 'Reminder email delivery is configured and authenticated.',
     });
-  } catch (_error) {
+  } catch (error) {
     return res.json({
       configured: true,
       verified: false,
-      message: 'Reminder email settings are saved, but the server could not authenticate with the email provider.',
+      message: smtpFailureMessage(error),
     });
   }
 });
