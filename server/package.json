@@ -4,7 +4,8 @@
   "description": "Authenticated Express API for the University Library Management System.",
   "main": "server.js",
   "scripts": {
-    "test": "node --test tests/records.test.cjs tests/clearance.test.cjs",
+    "test": "node --test tests/records.test.cjs tests/clearance.test.cjs tests/deployment.test.cjs",
+    "test:production": "node --test tests/production-smoke.cjs",
     "start": "node server.js",
     "seed:admin": "node scripts/seed-admin.js",
     "test:integration": "node --test tests/modules.integration.cjs"

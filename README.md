@@ -71,6 +71,7 @@ library-system/
 │   ├── routes/                  Express API routes
 │   ├── scripts/                 Schema and administrator setup
 │   └── tests/                   Unit and MariaDB integration tests
+├── RAILWAY_DEPLOYMENT.md        Railway service, variables, and launch checklist
 ├── CLEARANCE_MODULE.md          Clearance workflow and template reference
 ├── FIELD_LAYOUTS.md             Configurable student/book field behavior
 ├── MODULE_SETUP.md              Student, book, issue, return, and test details
@@ -198,7 +199,7 @@ The integration runner connects only to `127.0.0.1`, creates a uniquely named `l
 Current release verification:
 
 - Frontend production build: passed
-- Backend unit tests: 14 passed
+- Backend unit tests: 16 passed
 - MariaDB integration tests: 55 passed
 - Administrator browser workflows: passed
 - Frontend production dependency audit: zero known vulnerabilities
@@ -208,14 +209,13 @@ The integration coverage includes imports, duplicate handling, transaction rollb
 
 ## Deployment model
 
-A practical hosted arrangement is:
+A practical Railway arrangement is:
 
 | Component | Recommended host | Configuration |
 | --- | --- | --- |
-| Frontend | Vercel | Build with the public HTTPS API URL in `VITE_API_URL`; enable SPA fallback |
-| Backend | Railway | Run `npm --prefix server start`; configure secrets as service variables |
+| Frontend and backend | Railway | The Docker image builds React and serves it from Express on one HTTPS domain |
 | Database | Railway MySQL | Use the private database hostname from the backend service; do not expose the database publicly |
-| Uploaded branding | Persistent volume or object storage | Preserve institution logos and signatures across deployments |
+| Uploaded branding | Railway volume mounted at `/data` | Set `UPLOAD_DIR=/data/uploads` to preserve institution logos and signatures |
 | Email | University SMTP or another SMTP provider | Store credentials only in backend environment variables |
 
 The browser must communicate with the API over HTTPS. The database should accept connections only from the backend service or an approved administration path; the frontend never receives database credentials.
@@ -254,6 +254,7 @@ Role-based authorization and two-factor authentication are not implemented. Revi
 ## Project documentation
 
 - [Module setup and verified workflows](MODULE_SETUP.md)
+- [Railway deployment guide](RAILWAY_DEPLOYMENT.md)
 - [Configurable field layouts](FIELD_LAYOUTS.md)
 - [Student clearance module](CLEARANCE_MODULE.md)
 - [Deployment readiness review](DEPLOYMENT_REVIEW.md)

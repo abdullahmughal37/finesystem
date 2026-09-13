@@ -29,7 +29,7 @@ The module adds `clearance_templates`, `clearance_sequences`, and `clearance_let
 ## Verification
 
 - Production Vite build passed with Vite 6.4.3.
-- 14 backend unit tests passed, including template validation and one-page A4 PDF/hash generation.
+- 16 backend unit tests passed, including template validation, one-page A4 PDF/hash generation, production configuration, and administrator bootstrapping.
 - 55 MariaDB integration tests passed, including eligibility, issue/download/verify, template immutability, revocation, fine reopening, pending reports, and Fine Trash snapshots.
 - Administrator browser checks passed for blocked and eligible students, template editing, issuance, history, and public verification.
 - Frontend and backend production dependency audits report zero known vulnerabilities.

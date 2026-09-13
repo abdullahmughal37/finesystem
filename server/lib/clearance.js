@@ -234,7 +234,7 @@ function replaceTokens(text, values) {
 
 function safeUploadPath(url) {
   if (!url || !/^\/uploads\/[A-Za-z0-9._-]+$/.test(url)) return null;
-  const file = path.join(__dirname, '..', 'uploads', path.basename(url));
+  const file = path.join(require('./uploads'), path.basename(url));
   return fs.existsSync(file) ? file : null;
 }
 

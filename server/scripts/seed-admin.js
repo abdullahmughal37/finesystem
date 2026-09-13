@@ -1,13 +1,10 @@
-const bcrypt = require('bcryptjs');
 const db = require('../db');
+const { bootstrapValues, validateBootstrap } = require('../lib/adminBootstrap');
+const bcrypt = require('bcryptjs');
 
 async function main() {
-  const name = String(process.env.ADMIN_NAME || 'Library Administrator').trim();
-  const email = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
-  const password = String(process.env.ADMIN_PASSWORD || '');
-  if (!name || name.length > 100) throw new Error('ADMIN_NAME is required and must be at most 100 characters.');
-  if (!/^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/.test(email)) throw new Error('Set ADMIN_EMAIL to a valid email address.');
-  if (password.length < 12 || Buffer.byteLength(password, 'utf8') > 72) throw new Error('Set ADMIN_PASSWORD to 12-72 UTF-8 bytes.');
+  const { name, email, password } = bootstrapValues();
+  validateBootstrap({ name, email, password });
   await db.ready;
   const [existing] = await db.promise().query('SELECT id FROM admins WHERE email=?', [email]);
   if (existing.length) {

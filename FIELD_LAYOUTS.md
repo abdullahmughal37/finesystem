@@ -27,7 +27,7 @@ An administrator account was created in the configured local database because it
 
 ## Verification and limits
 
-`npm --prefix server test`: 14 passing unit tests.
+`npm --prefix server test`: 16 passing unit tests.
 
 With a local MySQL/MariaDB instance, set `TEST_DB_PORT`, then run `npm --prefix server run test:integration`: 55 passing tests including the parent suite. Every normal run creates and cleans up its own uniquely named test database; it does not load university records. The suite covers migration, duplicate handling, transaction failure rollback, concurrent borrowing/returns, dynamic fields, required values, alias collisions, stale revisions, archive/restore, exports/search, 90-day fine trash retention and purge, fine resolution, student clearance, reporting, account management, invalidated tokens, backups, and signed-out API rejection.
 

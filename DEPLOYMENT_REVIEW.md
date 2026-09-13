@@ -6,7 +6,7 @@ Update, 12 September 2026: student imports/forms and book circulation have since
 
 Further update, 12 September 2026: configurable catalog layouts, administrator account management, central business-API authentication, authenticated exports/backups, a 90-day Fine Trash, accurate notification identifiers, and explicit reminder-email failures are implemented. The nonfunctional OTP toggle is no longer presented as an available feature.
 
-Update, 13 September 2026: audited fine resolution and the student-clearance module are implemented. Clearance uses live obligations, immutable versioned PDFs, public QR verification, revocation history, and editable administrator templates. See [CLEARANCE_MODULE.md](CLEARANCE_MODULE.md). The current automated result is 14 unit tests and 55 isolated MariaDB integration tests passing; frontend and backend production dependency audits report zero known vulnerabilities.
+Update, 13 September 2026: audited fine resolution and the student-clearance module are implemented. Clearance uses live obligations, immutable versioned PDFs, public QR verification, revocation history, and editable administrator templates. See [CLEARANCE_MODULE.md](CLEARANCE_MODULE.md). The current automated result is 16 unit tests and 55 isolated MariaDB integration tests passing; frontend and backend production dependency audits report zero known vulnerabilities.
 
 ## Current readiness
 

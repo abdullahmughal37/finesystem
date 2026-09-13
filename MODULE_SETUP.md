@@ -67,7 +67,7 @@ Run the frontend in another terminal with `npm run dev`. For a production fronte
 npm --prefix server test
 ```
 
-This runs 14 tests covering CSV headings/encoding/quoting/limits, student identity, book validation, policy rates, date boundaries, safe CSV serialization, clearance templates, and one-page clearance PDF integrity.
+This runs 16 tests covering CSV headings/encoding/quoting/limits, student identity, book validation, policy rates, date boundaries, safe CSV serialization, clearance templates, one-page clearance PDF integrity, production configuration, and administrator bootstrapping.
 
 For integration tests, start a disposable LOCAL MySQL/MariaDB instance and set `TEST_DB_PORT` (and `TEST_DB_PASSWORD` if required), then run:
 

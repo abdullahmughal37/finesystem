@@ -1,7 +1,5 @@
 const express = require('express');
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
 const crypto = require('crypto');
 const db = require('../db');
 const { transaction, sendError } = require('../lib/database');
@@ -9,8 +7,7 @@ const { ValidationError, clean } = require('../lib/records');
 const { DEFAULT_TEMPLATE, CORE_TOKENS, normalizeTemplate, renderClearancePdf, renderPendingClearancePdf, pdfHash, clearanceCheck } = require('../lib/clearance');
 
 const router = express.Router();
-const uploads = path.join(__dirname, '..', 'uploads');
-if (!fs.existsSync(uploads)) fs.mkdirSync(uploads, { recursive: true });
+const uploads = require('../lib/uploads');
 const storage = multer.diskStorage({ destination: uploads, filename: (_req, file, cb) => cb(null, `signature-${crypto.randomUUID()}${file.mimetype === 'image/png' ? '.png' : '.jpg'}`) });
 const upload = multer({ storage, limits: { fileSize: 2 * 1024 * 1024, files: 1 }, fileFilter: (_req, file, cb) => cb(['image/png', 'image/jpeg'].includes(file.mimetype) ? null : new Error('Use a PNG or JPEG signature image.'), ['image/png', 'image/jpeg'].includes(file.mimetype)) });
 
