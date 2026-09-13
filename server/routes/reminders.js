@@ -10,14 +10,40 @@ router.use(authMiddleware);
 
 const smtpConfigured = () => Boolean(config.smtp.host && config.smtp.user && config.smtp.pass);
 
-router.get('/status', (_req, res) => {
+const createSmtpTransport = () => nodemailer.createTransport({
+  host: config.smtp.host,
+  port: config.smtp.port,
+  secure: config.smtp.port === 465,
+  auth: { user: config.smtp.user, pass: config.smtp.pass },
+  connectionTimeout: 10000,
+  greetingTimeout: 10000,
+  socketTimeout: 15000,
+});
+
+router.get('/status', async (_req, res) => {
   const configured = smtpConfigured();
-  res.json({
-    configured,
-    message: configured
-      ? 'Reminder email delivery is configured.'
-      : 'Reminder email delivery is not configured. Add SMTP_HOST, SMTP_USER, and SMTP_PASS on the server.',
-  });
+  if (!configured) {
+    return res.json({
+      configured: false,
+      verified: false,
+      message: 'Reminder email delivery is not configured. Add SMTP_HOST, SMTP_USER, and SMTP_PASS on the server.',
+    });
+  }
+
+  try {
+    await createSmtpTransport().verify();
+    return res.json({
+      configured: true,
+      verified: true,
+      message: 'Reminder email delivery is configured and authenticated.',
+    });
+  } catch (_error) {
+    return res.json({
+      configured: true,
+      verified: false,
+      message: 'Reminder email settings are saved, but the server could not authenticate with the email provider.',
+    });
+  }
 });
 
 const overdueSql = `
@@ -49,12 +75,7 @@ router.post('/send', async (req, res) => {
     const [rows] = await db.promise().query(overdueSql);
     const deliverable = rows.filter(row => validEmail(row.email));
     const skipped = rows.length - deliverable.length;
-    const transporter = nodemailer.createTransport({
-      host: config.smtp.host,
-      port: config.smtp.port,
-      secure: config.smtp.port === 465,
-      auth: { user: config.smtp.user, pass: config.smtp.pass },
-    });
+    const transporter = createSmtpTransport();
     const results = await Promise.allSettled(deliverable.map(row => transporter.sendMail({
       from: config.smtp.user,
       to: row.email,
