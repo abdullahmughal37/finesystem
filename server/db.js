@@ -10,9 +10,22 @@ async function initialize() {
     const [columns] = await db.promise().query(`SHOW COLUMNS FROM ${kind} LIKE 'custom_data'`);
     if (!columns.length) await db.promise().query(`ALTER TABLE ${kind} ADD COLUMN custom_data JSON NULL`);
   }
+  const [bookCopies] = await db.promise().query("SHOW COLUMNS FROM books LIKE 'total_copies'");
+  if (!bookCopies.length) await db.promise().query('ALTER TABLE books ADD COLUMN total_copies INT NOT NULL DEFAULT 1 AFTER title');
+  const [bookIdentity] = await db.promise().query("SHOW COLUMNS FROM books LIKE 'catalog_identity'");
+  if (!bookIdentity.length) await db.promise().query('ALTER TABLE books ADD COLUMN catalog_identity CHAR(64) NULL AFTER total_copies');
+  const [bookIdentityIndex] = await db.promise().query("SHOW INDEX FROM books WHERE Key_name='uq_books_catalog_identity'");
+  if (!bookIdentityIndex.length) await db.promise().query('ALTER TABLE books ADD UNIQUE INDEX uq_books_catalog_identity (catalog_identity)');
   await db.promise().query('CREATE TABLE IF NOT EXISTS catalog_layouts (kind VARCHAR(16) PRIMARY KEY, revision INT NOT NULL DEFAULT 1, fields LONGTEXT NOT NULL, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)');
   const { defaults: defaultLayout } = require('./lib/fieldSchema');
-  for (const kind of ['students','books']) await db.promise().query('INSERT IGNORE INTO catalog_layouts(kind,fields) VALUES (?,?)',[kind,JSON.stringify(defaultLayout(kind))]);
+  for (const kind of ['students','books']) {
+    const defaults = defaultLayout(kind);
+    await db.promise().query('INSERT IGNORE INTO catalog_layouts(kind,fields) VALUES (?,?)',[kind,JSON.stringify(defaults)]);
+    const [rows] = await db.promise().query('SELECT fields FROM catalog_layouts WHERE kind=?',[kind]);
+    const stored = JSON.parse(rows[0].fields); const present = new Set(stored.map(field=>field.key));
+    const missing = defaults.filter(field=>!present.has(field.key));
+    if (missing.length) await db.promise().query('UPDATE catalog_layouts SET fields=?,revision=revision+1 WHERE kind=?',[JSON.stringify([...stored,...missing]),kind]);
+  }
   const [sent] = await db.promise().query("SHOW COLUMNS FROM fines LIKE 'sentToAccounts'");
   const [version] = await db.promise().query("SHOW COLUMNS FROM admins LIKE 'password_version'");
   if (!version.length) await db.promise().query('ALTER TABLE admins ADD COLUMN password_version INT NOT NULL DEFAULT 0');

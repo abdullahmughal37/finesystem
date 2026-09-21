@@ -1,9 +1,9 @@
 const { ValidationError, clean, definitions, aliases, headerKey } = require('./records');
-const labels = { name:'Name', father_name:'Father Name', registration_no:'Registration No.', department:'Department', contact_no:'Contact No.', email:'Email', semester:'Semester', status:'Status', remarks:'Remarks', accession_no:'Accession No.', title:'Title', author_name:'Author Name', publisher:'Publisher', publish_year:'Publish Year', pages:'Pages', call_no:'Call No.', binding:'Binding', source:'Source', cost:'Cost', isbn:'ISBN' };
+const labels = { name:'Name', father_name:'Father Name', registration_no:'Registration No.', department:'Department', contact_no:'Contact No.', email:'Email', semester:'Semester', status:'Status', remarks:'Remarks', accession_no:'Accession No.', title:'Title', total_copies:'Total Copies', author_name:'Author Name', publisher:'Publisher', publish_year:'Publish Year', pages:'Pages', call_no:'Call No.', binding:'Binding', source:'Source', cost:'Cost', isbn:'ISBN' };
 const types = ['text','textarea','email','tel','number','date','select'];
 function defaults(kind) {
-  const keys = kind === 'students' ? ['name','father_name','registration_no','department','contact_no','semester','status','remarks','email'] : ['accession_no','title','author_name','publisher','publish_year','pages','call_no','binding','source','cost','isbn','remarks'];
-  return keys.map(key => ({key, label:labels[key], core:true, type:key === 'status' ? 'select' : key === 'remarks' ? 'textarea' : key === 'email' ? 'email' : key === 'contact_no' ? 'tel' : ['pages','cost'].includes(key) ? 'number' : 'text', required:definitions[kind].required.includes(key), showInForm:true, showInTable:kind === 'students' || ['accession_no','title','author_name','publisher','isbn','call_no'].includes(key), width:key === 'remarks' ? 'full' : 'half', archived:false, options:key === 'status' ? ['Active','Inactive','Graduated','Suspended'] : [], aliases:[] }));
+  const keys = kind === 'students' ? ['name','father_name','registration_no','department','contact_no','semester','status','remarks','email'] : ['accession_no','title','total_copies','author_name','publisher','publish_year','pages','call_no','binding','source','cost','isbn','remarks'];
+  return keys.map(key => ({key, label:labels[key], core:true, type:key === 'status' ? 'select' : key === 'remarks' ? 'textarea' : key === 'email' ? 'email' : key === 'contact_no' ? 'tel' : ['pages','cost','total_copies'].includes(key) ? 'number' : 'text', required:definitions[kind].required.includes(key), showInForm:true, showInTable:kind === 'students' || ['accession_no','title','total_copies','author_name','publisher','isbn','call_no'].includes(key), width:key === 'remarks' ? 'full' : 'half', archived:false, options:key === 'status' ? ['Active','Inactive','Graduated','Suspended'] : [], aliases:[] }));
 }
 function headerMap(fields, kind) {
   const map = Object.create(null);
@@ -35,7 +35,6 @@ function normalizeLayout(kind, input, previous) {
     if (type === 'select' && (!options.length || options.length > 50 || options.some(o => o.length > 80) || new Set(options.map(o=>o.toLowerCase())).size !== options.length)) throw new ValidationError(`“${label}” needs 1–50 distinct dropdown options (up to 80 characters each).`);
     return {key:raw.key,label,core:!!core,type,required,archived,showInForm,showInTable:raw.showInTable === true,width:raw.width === 'full' ? 'full' : 'half',options,aliases:[...new Set([...(old?.aliases || []), ...(old && old.label !== label ? [old.label] : [])])]};
   });
-  if (previous.some(f => !seen.has(f.key))) throw new ValidationError('Fields cannot be deleted. Archive custom fields to preserve saved values.');
   if (base.some(f=>!seen.has(f.key))) throw new ValidationError('Keep all built-in fields in the layout.');
   if (!fields.some(f=>!f.archived && f.showInTable)) throw new ValidationError('Show at least one field in the table.');
   headerMap(fields,kind); return fields;

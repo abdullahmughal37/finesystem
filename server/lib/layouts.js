@@ -19,6 +19,7 @@ async function updateLayout(kind, input) {
     if (!Number.isSafeInteger(input.revision)) throw new ValidationError('The layout revision is required.');
     checkRevision(current,input.revision);
     const fields = normalizeLayout(kind,input.fields,current.fields);
+    const deleted = current.fields.filter(field => !field.core && !fields.some(next => next.key === field.key));
     const changed = fields.filter(f=>!f.core && !f.archived && current.fields.some(old=>old.key===f.key && (old.archived || old.type!==f.type || JSON.stringify(old.options)!==JSON.stringify(f.options))));
     if (changed.length) {
       const [rows] = await connection.query(`SELECT custom_data FROM ${kind}`);
@@ -26,6 +27,10 @@ async function updateLayout(kind, input) {
         try { validateValue(field,customValues(row)[field.key],false); }
         catch { throw new ValidationError(`Saved values do not fit the new type or options for “${field.label}”. Update those records first, or create a new field.`); }
       }
+    }
+    if (deleted.length) {
+      const paths = deleted.map(field => `$.${field.key}`);
+      await connection.query(`UPDATE ${kind} SET custom_data=JSON_REMOVE(custom_data,${paths.map(()=>'?').join(',')}) WHERE custom_data IS NOT NULL`, paths);
     }
     await connection.query('UPDATE catalog_layouts SET fields=?,revision=revision+1 WHERE kind=?',[JSON.stringify(fields),kind]);
     return {kind,revision:current.revision+1,fields};

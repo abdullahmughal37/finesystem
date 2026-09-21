@@ -5,7 +5,7 @@ const {today}=require('../lib/policy');
 const {sendError}=require('../lib/database');
 router.get('/stats',async(req,res)=>{
   try{
-    const queries={totalStudents:'SELECT COUNT(*) v FROM students',totalBooks:'SELECT COUNT(*) v FROM books',issuedBooks:'SELECT COUNT(*) v FROM issues WHERE returned=0',returnedBooks:'SELECT COUNT(*) v FROM issues WHERE returned=1',overdueBooks:'SELECT COUNT(*) v FROM issues WHERE returned=0 AND due_date<?',studentsWithFines:"SELECT COUNT(DISTINCT student_id) v FROM fines WHERE status='unsent' AND COALESCE(resolution_status,'pending')='pending'",totalFines:"SELECT COALESCE(SUM(fine_amount),0) v FROM fines WHERE COALESCE(resolution_status,'pending')='pending'"};
+    const queries={totalStudents:'SELECT COUNT(*) v FROM students',totalBooks:'SELECT COALESCE(SUM(total_copies),0) v FROM books',issuedBooks:'SELECT COUNT(*) v FROM issues WHERE returned=0',returnedBooks:'SELECT COUNT(*) v FROM issues WHERE returned=1',overdueBooks:'SELECT COUNT(*) v FROM issues WHERE returned=0 AND due_date<?',studentsWithFines:"SELECT COUNT(DISTINCT student_id) v FROM fines WHERE status='unsent' AND COALESCE(resolution_status,'pending')='pending'",totalFines:"SELECT COALESCE(SUM(fine_amount),0) v FROM fines WHERE COALESCE(resolution_status,'pending')='pending'"};
     const results=await Promise.all(Object.entries(queries).map(async([k,sql])=>{const [rows]=await db.promise().query(sql,k==='overdueBooks'?[today()]:[]);return [k,Number(rows[0].v)];}));res.json(Object.fromEntries(results));
   }catch(error){sendError(res,error);}
 });

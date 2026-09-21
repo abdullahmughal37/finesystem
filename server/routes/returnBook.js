@@ -24,7 +24,8 @@ router.post('/return/:issueId',async(req,res)=>{
       const policy=await getPolicy(connection);const date=today();const overdueDays=daysLate(issue.due_date,date);const amount=fineAmount(overdueDays,policy.finePerDay);
       if(amount>0)await connection.query("INSERT INTO fines (issue_id,student_id,book_id,days_late,fine_amount,fine_type,reason,status) VALUES (?,?,?,?,?,'auto',?,'unsent')",[id,issue.student_id,issue.book_id,overdueDays,amount,`Late return - ${overdueDays} day${overdueDays===1?'':'s'}`]);
       await connection.query('UPDATE issues SET returned=1,return_date=? WHERE id=?',[date,id]);
-      return {success:true,fineGenerated:amount>0,overdueDays,fineAmount:amount};
+      const [stock]=await connection.query('SELECT b.total_copies-(SELECT COUNT(*) FROM issues i WHERE i.book_id=b.id AND i.returned=0) availableCopies FROM books b WHERE b.id=?',[issue.book_id]);
+      return {success:true,fineGenerated:amount>0,overdueDays,fineAmount:amount,availableCopies:Number(stock[0]?.availableCopies||0)};
     });
     res.json(result);
   }catch(error){sendError(res,error);}

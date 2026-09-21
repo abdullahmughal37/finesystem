@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS books (
   accession_no VARCHAR(100) UNIQUE NOT NULL,
   author_name VARCHAR(255) DEFAULT '',
   title VARCHAR(255) NOT NULL,
+  total_copies INT NOT NULL DEFAULT 1,
+  catalog_identity CHAR(64) NULL,
   publisher VARCHAR(255) DEFAULT '',
   publish_year VARCHAR(20) DEFAULT '',
   pages INT DEFAULT 0,
@@ -27,7 +29,8 @@ CREATE TABLE IF NOT EXISTS books (
   cost DECIMAL(10,2) DEFAULT 0,
   isbn VARCHAR(100) DEFAULT '',
   remarks TEXT,
-  custom_data JSON NULL
+  custom_data JSON NULL,
+  UNIQUE KEY uq_books_catalog_identity (catalog_identity)
 );
 
 CREATE TABLE IF NOT EXISTS issues (

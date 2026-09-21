@@ -1,6 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { parseImport, student, book, classify, csvText } = require('../lib/records');
+const { parseImport, student, book, classify, bookIdentity, csvText } = require('../lib/records');
+const { defaults, normalizeLayout } = require('../lib/fieldSchema');
 const { today, addDays, daysLate, fineAmount, policyFromRows } = require('../lib/policy');
 test('workbook headers, title rows, BOM, and optional email', async () => {
   const text='\uFEFF,,,,,,,,\n,,,Required Student Data,,,,,\nSr #,Name ,Father Name,Registration No.,Department,Contact No.,Semester,Status ,Remarks ,Email\n1, Ali   Khan ,Father, fa24-001 ,CS,03001234567,1,active,First,ALI@example.edu\n';
@@ -33,11 +34,19 @@ test('10,000 row limit',async()=>{
   const text='name,registration_no\n'+Array.from({length:10001},(_,i)=>`Name,${i}`).join('\n');
   await assert.rejects(parseImport(Buffer.from(text),'students'),/10,000/);
 });
-test('book copies may share titles and ISBNs; invalid numbers are rejected',()=>{
-  const a=book({accession_no:'a',title:'Title',isbn:'ISBN',cost:'12.50',pages:20});
-  assert.equal(a.accession_no,'A');assert.equal(a.cost,12.5);assert.equal(classify('books',{...a,cost:'12.50'},a),'duplicate');
+test('book stock is a positive whole number and edition identity prefers ISBN',()=>{
+  const a=book({accession_no:'a',title:'Title',isbn:'978-1-23',cost:'12.50',pages:20,total_copies:4});
+  assert.equal(a.accession_no,'A');assert.equal(a.cost,12.5);assert.equal(a.total_copies,4);assert.equal(classify('books',{...a,cost:'12.50'},a),'duplicate');
   assert.equal(classify('books',a,{...a,title:'Changed'}),'conflict');
-  for(const values of [{pages:-1},{pages:1.2},{cost:-10},{cost:'NaN'},{cost:'1.001'}])assert.throws(()=>book({...a,...values}));
+  assert.equal(bookIdentity(a),bookIdentity({...a,isbn:'978 1 23',accession_no:'OTHER'}));
+  assert.equal(book({accession_no:'b',title:'Default stock'}).total_copies,1);
+  for(const values of [{pages:-1},{pages:1.2},{cost:-10},{cost:'NaN'},{cost:'1.001'},{total_copies:0},{total_copies:1.5}])assert.throws(()=>book({...a,...values}));
+});
+test('custom layout fields can be deleted but built-in fields cannot',()=>{
+  const base=defaults('students');const custom={key:'custom_delete01',label:'Temporary',core:false,type:'text',required:false,showInForm:true,showInTable:true,width:'half',archived:false,options:[],aliases:[]};
+  const withCustom=normalizeLayout('students',[...base,custom],base);
+  assert.equal(normalizeLayout('students',base,withCustom).some(field=>field.key===custom.key),false);
+  assert.throws(()=>normalizeLayout('students',base.filter(field=>field.key!=='name'),base),/built-in/);
 });
 test('student validation preserves leading zeroes and permits matching names',()=>{
   assert.equal(student({name:'Same',registration_no:'001',contact_no:'00123'}).contact_no,'00123');

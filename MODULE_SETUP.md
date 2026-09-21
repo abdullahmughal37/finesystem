@@ -34,12 +34,12 @@ Students and books use server-side search and pagination. Imports and manual cha
 
 ## Books, issuing, and returns
 
-- Each accession identifies one physical copy. Different copies may share title, author, and ISBN.
-- Matching accession and catalog details are duplicates. Changed details for an existing accession are conflicts, requiring explicit editing.
-- Add/Edit supports accession, title, author, publisher, publication year, pages, call number, binding, source, cost, ISBN, and remarks.
+- Each accession identifies one title/edition. `Total Copies` stores the number of physical copies held by the library.
+- Matching ISBNs—or matching title, author, publisher, and publication year when ISBN is blank—are duplicates. Increase `Total Copies` on the existing record instead of creating another accession. Changed details for an existing accession are conflicts, requiring explicit editing.
+- Add/Edit supports accession, title, total copies, author, publisher, publication year, pages, call number, binding, source, cost, ISBN, and remarks.
 - The catalog shows total, available, issued, and overdue copies. View shows full metadata and the latest 100 loans, including returned loans.
 - Text searches that match several students or books require selection. Exact registration/accession searches take precedence. Changing search text clears the prior selection.
-- Issuing uses backend-calculated dates and current policy. Student and book row locks prevent concurrent requests from exceeding the borrowing limit or lending the same copy twice.
+- Issuing uses backend-calculated dates and current policy. Student and book row locks prevent concurrent requests from exceeding the borrowing limit or the title's total copy count. Availability is calculated as total copies minus active loans, so a return restores one copy automatically.
 - Suspended/inactive/graduated students cannot borrow. Payment-based clearance is not implemented by this module; existing sent/unsent fine states cannot establish whether a fine was paid.
 - Returns and automatic fines commit together. Repeated return requests do not create additional fines. Zero and decimal daily rates are supported.
 - The business timezone defaults to Asia/Karachi; set `LIBRARY_TIMEZONE` if needed. Date-only calculations are consistent across the catalog, return preview, and overdue report.
@@ -67,7 +67,7 @@ Run the frontend in another terminal with `npm run dev`. For a production fronte
 npm --prefix server test
 ```
 
-This runs 16 tests covering CSV headings/encoding/quoting/limits, student identity, book validation, policy rates, date boundaries, safe CSV serialization, clearance templates, one-page clearance PDF integrity, production configuration, and administrator bootstrapping.
+This runs 17 tests covering CSV headings/encoding/quoting/limits, student identity, book stock and edition validation, configurable-field deletion, policy rates, date boundaries, safe CSV serialization, clearance templates, one-page clearance PDF integrity, production configuration, and administrator bootstrapping.
 
 For integration tests, start a disposable LOCAL MySQL/MariaDB instance and set `TEST_DB_PORT` (and `TEST_DB_PASSWORD` if required), then run:
 

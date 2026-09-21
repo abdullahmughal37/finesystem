@@ -6,7 +6,7 @@ class ValidationError extends Error {
 const clean = value => String(value ?? '').normalize('NFC').trim().replace(/\s+/g, ' ');
 const identity = value => clean(value).toLowerCase();
 const studentFields = ['name', 'father_name', 'registration_no', 'department', 'contact_no', 'email', 'semester', 'status', 'remarks'];
-const bookFields = ['accession_no', 'author_name', 'title', 'publisher', 'publish_year', 'pages', 'call_no', 'binding', 'source', 'cost', 'isbn', 'remarks'];
+const bookFields = ['accession_no', 'title', 'total_copies', 'author_name', 'publisher', 'publish_year', 'pages', 'call_no', 'binding', 'source', 'cost', 'isbn', 'remarks'];
 const statuses = ['Active', 'Inactive', 'Graduated', 'Suspended'];
 function textFields(input, fields, limits) {
   const out = {};
@@ -29,6 +29,10 @@ function book(input) {
   const out = textFields(input, bookFields, { accession_no: 100, publish_year: 20, call_no: 100, binding: 100, source: 100, isbn: 100, remarks: 5000 });
   if (!out.accession_no || !out.title) throw new ValidationError('Accession No. and Title are required.');
   out.accession_no = out.accession_no.toUpperCase();
+  const copies = clean(input.total_copies);
+  if (copies && !/^\d+$/.test(copies)) throw new ValidationError('Total Copies must be a positive whole number.');
+  out.total_copies = Number(copies || 1);
+  if (!Number.isSafeInteger(out.total_copies) || out.total_copies < 1 || out.total_copies > 1000000) throw new ValidationError('Total Copies must be between 1 and 1,000,000.');
   for (const field of ['pages', 'cost']) {
     if (out[field] && !/^\d+(\.\d+)?$/.test(out[field])) throw new ValidationError(`${field} must be a non-negative number.`);
     out[field] = Number(out[field] || 0);
@@ -45,6 +49,7 @@ const aliases = {
   email: 'email', emailaddress: 'email', semester: 'semester', status: 'status', remarks: 'remarks',
   accessionno: 'accession_no', accessionnumber: 'accession_no', author: 'author_name', authorname: 'author_name', title: 'title', booktitle: 'title',
   publisher: 'publisher', publishyear: 'publish_year', publicationyear: 'publish_year', year: 'publish_year', pages: 'pages',
+  totalcopies: 'total_copies', copies: 'total_copies', copycount: 'total_copies', quantity: 'total_copies', stock: 'total_copies',
   callno: 'call_no', callnumber: 'call_no', binding: 'binding', source: 'source', cost: 'cost', isbn: 'isbn',
 };
 const definitions = {
@@ -108,6 +113,13 @@ function classify(kind, existing, incoming) {
   const keys = kind === 'students' ? ['name', 'registration_no', 'email'] : bookFields;
   return keys.every(key => kind === 'books' && ['pages', 'cost'].includes(key) ? Number(existing[key] || 0) === Number(incoming[key] || 0) : identity(existing[key]) === identity(incoming[key])) ? 'duplicate' : 'conflict';
 }
+function bookIdentity(value) {
+  const normalizedIsbn = identity(value?.isbn).replace(/[^0-9x]/g, '');
+  const isbn = /^(?:\d{9}[\dx]|\d{13})$/.test(normalizedIsbn) ? normalizedIsbn : '';
+  if (isbn) return `isbn:${isbn}`;
+  const parts = ['title', 'author_name', 'publisher', 'publish_year'].map(key => identity(value?.[key]));
+  return parts[0] ? `details:${parts.join('|')}` : '';
+}
 function csvText(headers, rows) {
   const cell = value => {
     let text = String(value ?? ''); if (/^[\s]*[=+\-@]/.test(text)) text = "'" + text;
@@ -115,4 +127,4 @@ function csvText(headers, rows) {
   };
   return '\uFEFF' + [headers, ...rows].map(row => row.map(cell).join(',')).join('\r\n');
 }
-module.exports = { ValidationError, clean, identity, definitions, studentFields, bookFields, student, book, parseImport, classify, csvText, aliases, headerKey };
+module.exports = { ValidationError, clean, identity, definitions, studentFields, bookFields, student, book, parseImport, classify, bookIdentity, csvText, aliases, headerKey };

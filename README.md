@@ -1,6 +1,6 @@
 # University Library Management System
 
-A full-stack library administration platform for managing students, physical book copies, circulation, fines, reminders, reports, and verifiable student clearance certificates.
+A full-stack library administration platform for managing students, book-copy inventory, circulation, fines, reminders, reports, and verifiable student clearance certificates.
 
 The application is designed for university library staff. It combines a React administration interface with an authenticated Express API and a MySQL/MariaDB database. Catalog fields, institutional branding, circulation policy, administrator accounts, and clearance-letter content can be managed from the application settings.
 
@@ -12,7 +12,7 @@ The application is designed for university library staff. It combines a React ad
 | --- | --- |
 | Dashboard | Live circulation totals, recent issues, recent fines, and monthly activity |
 | Students | Manual add/edit/view, server-side search and pagination, configurable fields, and CSV import/export |
-| Books | One record per physical accession, availability and history, configurable fields, and CSV import/export |
+| Books | One record per title/edition with a copy count, live availability and history, configurable fields, and CSV import/export |
 | Circulation | Student/book lookup, eligibility checks, configured loan limits and periods, concurrent issue protection, and atomic returns |
 | Fines | Automatic overdue fines, manual fines, Paid/Waived resolution, Accounts handoff, CSV export, and audited removal |
 | Fine Trash | Complete deleted-fine snapshots, deletion reason and administrator identity, with automatic permanent removal after 90 days |
@@ -24,10 +24,10 @@ The application is designed for university library staff. It combines a React ad
 
 ## Key business rules
 
-- An accession number represents one physical book copy and cannot be actively issued to two students.
+- An accession number represents one catalog title/edition. `Total Copies` records its stock; active loans can never exceed that count.
 - Inactive, suspended, and graduated students cannot borrow books.
 - The backend applies the configured maximum-book limit, loan period, fine rate, and library timezone.
-- Issuing uses database locks so simultaneous requests cannot exceed a student's limit or lend the same copy twice.
+- Issuing uses database locks so simultaneous requests cannot exceed a student's limit or the remaining stock. Returning a loan immediately restores one available copy.
 - Returning a book and creating its overdue fine occur in one transaction.
 - Student imports treat a matching normalized name, registration number, and email as a duplicate. A shared name alone does not identify the same student.
 - Imports preview Ready, Duplicate, Conflict, and Invalid rows before insertion and never overwrite existing records.
@@ -199,8 +199,8 @@ The integration runner connects only to `127.0.0.1`, creates a uniquely named `l
 Current release verification:
 
 - Frontend production build: passed
-- Backend unit tests: 16 passed
-- MariaDB integration tests: 55 passed
+- Backend unit tests: 17 passed
+- MariaDB integration suite: 56 database-backed checks
 - Administrator browser workflows: passed
 - Frontend production dependency audit: zero known vulnerabilities
 - Backend production dependency audit: zero known vulnerabilities

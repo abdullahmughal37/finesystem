@@ -9,11 +9,13 @@ for (const kind of ['student','book']) {
     try {
       const q=clean(req.params.query); const isStudent=kind==='student';
       const table=isStudent?'students':'books';const key=isStudent?'registration_no':'accession_no';const name=isStudent?'name':'title';const field=isStudent?'student_id':'book_id';
-      const select=`SELECT t.*, (SELECT COUNT(*) FROM issues i WHERE i.${field}=t.id AND returned=0) AS ${isStudent?'issued':'activeIssues'} FROM ${table} t`;
+      const active=`(SELECT COUNT(*) FROM issues i WHERE i.${field}=t.id AND returned=0)`;
+      const select=`SELECT t.*, ${active} AS ${isStudent?'issued':'activeIssues'}${isStudent?'':`, GREATEST(t.total_copies-${active},0) AS availableCopies`} FROM ${table} t`;
       const [exact]=await db.promise().query(`${select} WHERE t.${key}=?`,[q]);
       const [matches]=exact.length?[exact]:await db.promise().query(`${select} WHERE t.${name} LIKE ? ORDER BY t.${key} LIMIT 20`,[`%${q}%`]);
+      const publicMatches=isStudent?matches:matches.map(({catalog_identity,...row})=>row);
       const policy=await getPolicy(db.promise());
-      res.json({found:matches.length===1,[kind]:matches.length===1?matches[0]:null,matches,policy,ambiguous:matches.length>1});
+      res.json({found:publicMatches.length===1,[kind]:publicMatches.length===1?publicMatches[0]:null,matches:publicMatches,policy,ambiguous:publicMatches.length>1});
     } catch(error) {sendError(res,error);}
   });
 }
@@ -26,16 +28,16 @@ router.post('/issue',async(req,res)=>{
       if(!students.length)throw new ValidationError('Student not found.',404);
       const student=students[0];
       if(student.status!=='Active')throw new ValidationError(`Student is ${student.status} and cannot borrow.`,409);
-      const [books]=await connection.query('SELECT id FROM books WHERE accession_no=? FOR UPDATE',[accession]);
+      const [books]=await connection.query('SELECT id,total_copies FROM books WHERE accession_no=? FOR UPDATE',[accession]);
       if(!books.length)throw new ValidationError('Book not found.',404);
       const [active]=await connection.query('SELECT id FROM issues WHERE book_id=? AND returned=0 FOR UPDATE',[books[0].id]);
-      if(active.length)throw new ValidationError('This copy is already issued. Return it before issuing it again.',409);
+      if(active.length>=Number(books[0].total_copies))throw new ValidationError('All copies of this book are currently issued. Return a copy before issuing another.',409,'no_copies_available');
       const policy=await getPolicy(connection);
       const [loans]=await connection.query('SELECT id FROM issues WHERE student_id=? AND returned=0 FOR UPDATE',[student.id]);
       if(loans.length>=policy.maxBooks)throw new ValidationError(`Student already has the maximum of ${policy.maxBooks} books.`,409);
       const issueDate=today();const dueDate=addDays(issueDate,policy.issueDays);
       const [insert]=await connection.query('INSERT INTO issues (student_id,book_id,issue_date,due_date,returned) VALUES (?,?,?,?,0)',[student.id,books[0].id,issueDate,dueDate]);
-      return {success:true,message:'Book Issued Successfully',issueId:insert.insertId,issueDate,dueDate,policy};
+      return {success:true,message:'Book Issued Successfully',issueId:insert.insertId,issueDate,dueDate,availableCopies:Number(books[0].total_copies)-active.length-1,policy};
     });
     res.status(201).json(result);
   } catch(error){sendError(res,error);}

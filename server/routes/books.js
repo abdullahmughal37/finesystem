@@ -10,9 +10,10 @@ router.get('/', async (req, res) => {
     const where = search ? "WHERE b.title LIKE ? OR b.accession_no LIKE ? OR b.author_name LIKE ? OR b.isbn LIKE ? OR JSON_UNQUOTE(JSON_EXTRACT(b.custom_data, '$.*')) LIKE ?" : '';
     const args = search ? Array(5).fill(`%${search}%`) : [];
     const [count] = await db.promise().query(`SELECT COUNT(*) total FROM books b ${where}`, args);
-    const [rows] = await db.promise().query(`SELECT b.*, (SELECT COUNT(*) FROM issues i WHERE i.book_id=b.id AND returned=0) issuedCount, (SELECT COUNT(*) FROM issues i WHERE i.book_id=b.id AND returned=0 AND due_date<?) overdueCount FROM books b ${where} ORDER BY b.id DESC LIMIT ? OFFSET ?`, [today(), ...args, limit, offset]);
-    const [stats] = await db.promise().query(`SELECT COUNT(*) total, SUM(EXISTS(SELECT 1 FROM issues i WHERE i.book_id=b.id AND returned=0)) issued, SUM(EXISTS(SELECT 1 FROM issues i WHERE i.book_id=b.id AND returned=0 AND due_date<?)) overdue FROM books b`, [today()]);
-    res.json({ rows, total: count[0].total, page, limit, stats: { total: Number(stats[0].total), issued: Number(stats[0].issued), available: Number(stats[0].total)-Number(stats[0].issued), overdue: Number(stats[0].overdue) } });
+    const [rows] = await db.promise().query(`SELECT b.*, (SELECT COUNT(*) FROM issues i WHERE i.book_id=b.id AND returned=0) issuedCount, GREATEST(b.total_copies-(SELECT COUNT(*) FROM issues i WHERE i.book_id=b.id AND returned=0),0) availableCount, (SELECT COUNT(*) FROM issues i WHERE i.book_id=b.id AND returned=0 AND due_date<?) overdueCount FROM books b ${where} ORDER BY b.id DESC LIMIT ? OFFSET ?`, [today(), ...args, limit, offset]);
+    const [stats] = await db.promise().query(`SELECT COALESCE(SUM(total_copies),0) total, (SELECT COUNT(*) FROM issues WHERE returned=0) issued, (SELECT COUNT(*) FROM issues WHERE returned=0 AND due_date<?) overdue FROM books`, [today()]);
+    const publicRows=rows.map(({catalog_identity,...row})=>row);
+    res.json({ rows:publicRows, total: count[0].total, page, limit, stats: { total: Number(stats[0].total), issued: Number(stats[0].issued), available: Math.max(0,Number(stats[0].total)-Number(stats[0].issued)), overdue: Number(stats[0].overdue) } });
   } catch (error) { sendError(res, error); }
 });
 router.post('/', async (req, res) => {
