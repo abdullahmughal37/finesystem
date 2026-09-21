@@ -4,6 +4,8 @@ const db = require('../db');
 const { transaction, sendError } = require('../lib/database');
 const { clean, ValidationError } = require('../lib/records');
 const { today, addDays, getPolicy } = require('../lib/policy');
+const {getLayout}=require('../lib/layouts');
+const {bookSearchClause,bookSearchArgs,describeBookMatch,withoutInternalBookFields}=require('../lib/bookSearch');
 for (const kind of ['student','book']) {
   router.get(`/${kind}/:query`, async (req,res) => {
     try {
@@ -12,8 +14,14 @@ for (const kind of ['student','book']) {
       const active=`(SELECT COUNT(*) FROM issues i WHERE i.${field}=t.id AND returned=0)`;
       const select=`SELECT t.*, ${active} AS ${isStudent?'issued':'activeIssues'}${isStudent?'':`, GREATEST(t.total_copies-${active},0) AS availableCopies`} FROM ${table} t`;
       const [exact]=await db.promise().query(`${select} WHERE t.${key}=?`,[q]);
-      const [matches]=exact.length?[exact]:await db.promise().query(`${select} WHERE t.${name} LIKE ? ORDER BY t.${key} LIMIT 20`,[`%${q}%`]);
-      const publicMatches=isStudent?matches:matches.map(({catalog_identity,...row})=>row);
+      let matches=exact;
+      if(!matches.length) {
+        if(isStudent) [matches]=await db.promise().query(`${select} WHERE t.${name} LIKE ? ORDER BY t.${key} LIMIT 20`,[`%${q}%`]);
+        else [matches]=await db.promise().query(`${select} WHERE ${bookSearchClause('t')} ORDER BY CASE WHEN t.title LIKE ? THEN 0 WHEN t.author_name LIKE ? THEN 1 WHEN t.call_no LIKE ? THEN 2 ELSE 3 END,t.title,t.accession_no LIMIT 20`,[...bookSearchArgs(q),`${q}%`,`${q}%`,`${q}%`]);
+      }
+      let publicMatches;
+      if(isStudent) publicMatches=matches;
+      else {const layout=await getLayout('books');publicMatches=matches.map(row=>({...withoutInternalBookFields(row),match:describeBookMatch(row,q,layout)}));}
       const policy=await getPolicy(db.promise());
       res.json({found:publicMatches.length===1,[kind]:publicMatches.length===1?publicMatches[0]:null,matches:publicMatches,policy,ambiguous:publicMatches.length>1});
     } catch(error) {sendError(res,error);}

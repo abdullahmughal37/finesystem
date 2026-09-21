@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Search, CheckCircle, AlertTriangle, BookCheck, DollarSign } from "lucide-react";
 import { requestJson } from "@/lib/api";
 
@@ -15,6 +15,10 @@ type RecordType = {
   overdueDays: number;
   fineAmount: number;
   finePerDay: number;
+  authorName: string;
+  callNo: string;
+  isbn: string;
+  match?: {label:string;value:string}|null;
 };
 
 export function ReturnBook() {
@@ -25,20 +29,25 @@ export function ReturnBook() {
   const [loading, setLoading] = useState(false);
   const [returningId, setReturningId] = useState<number | null>(null);
   const [notice, setNotice] = useState("");
+  const [suggestions,setSuggestions]=useState<RecordType[]>([]);
+  const [suggesting,setSuggesting]=useState(false);
 
-  const handleSearch = async () => {
-    const key = input.trim();
+  useEffect(()=>{if(mode!=="book"||input.trim().length<2||records.length){setSuggestions([]);setSuggesting(false);return;}const controller=new AbortController();const timer=setTimeout(()=>{setSuggesting(true);requestJson(`/api/return/issues/book/${encodeURIComponent(input.trim())}`,{signal:controller.signal}).then(data=>setSuggestions(Array.isArray(data?.records)?data.records:[])).catch(error=>{if(!controller.signal.aborted)setError(error instanceof Error?error.message:"Unable to search books.");}).finally(()=>{if(!controller.signal.aborted)setSuggesting(false);});},250);return()=>{clearTimeout(timer);controller.abort();};},[mode,input,records.length]);
+
+  const handleSearch = async (selectedKey?:string) => {
+    const key = (selectedKey??input).trim();
     if (!key) return;
     setLoading(true);
     setError("");
     setNotice("");
     setRecords([]);
+    setSuggestions([]);
     try {
       const endpoint = mode === "student" ? `/api/return/issues/student/${encodeURIComponent(key)}` : `/api/return/issues/book/${encodeURIComponent(key)}`;
       const data = await requestJson(endpoint);
       const rows = Array.isArray(data?.records) ? data.records : [];
       setRecords(rows);
-      if (rows.length === 0) setError("No active books");
+      if (rows.length === 0) setError("No active loans match this search.");
     } catch (error) {
       setError(error instanceof Error ? error.message : "Server error. Please try again.");
     } finally {
@@ -69,12 +78,12 @@ export function ReturnBook() {
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 space-y-4">
             <div className="flex items-center gap-2 pb-3 border-b border-gray-100"><div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center"><BookCheck size={14} className="text-blue-600" /></div><h3 className="text-gray-800">Search Active Issues</h3></div>
             <div className="flex gap-2">
-              <button onClick={() => { setMode("student"); setInput(""); setRecords([]); setError(""); setNotice(""); }} className={`px-3 py-2 rounded-lg text-sm ${mode === "student" ? "bg-blue-600 text-white" : "border text-gray-600"}`}>By Roll Number</button>
-              <button onClick={() => { setMode("book"); setInput(""); setRecords([]); setError(""); setNotice(""); }} className={`px-3 py-2 rounded-lg text-sm ${mode === "book" ? "bg-blue-600 text-white" : "border text-gray-600"}`}>By Accession Number</button>
+              <button onClick={() => { setMode("student"); setInput(""); setRecords([]); setSuggestions([]); setError(""); setNotice(""); }} className={`px-3 py-2 rounded-lg text-sm ${mode === "student" ? "bg-blue-600 text-white" : "border text-gray-600"}`}>By Roll Number</button>
+              <button onClick={() => { setMode("book"); setInput(""); setRecords([]); setSuggestions([]); setError(""); setNotice(""); }} className={`px-3 py-2 rounded-lg text-sm ${mode === "book" ? "bg-blue-600 text-white" : "border text-gray-600"}`}>By Book Details</button>
             </div>
             <div className="flex gap-2">
-              <div className="flex-1"><label className="block text-sm font-medium text-gray-700 mb-1">{mode === "student" ? "Student Registration Number" : "Book Accession Number"}</label><input type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleSearch()} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono" placeholder={mode === "student" ? "e.g. FA21-BCS-001" : "e.g. ACC-001"} /></div>
-              <button onClick={handleSearch} disabled={loading} className="self-end flex items-center gap-2 px-4 py-2 rounded-lg text-sm text-white font-medium" style={{ background: "linear-gradient(135deg, #1F3A8A, #3B82F6)" }}><Search size={14} /> Find</button>
+              <div className="relative flex-1"><label className="block text-sm font-medium text-gray-700 mb-1">{mode === "student" ? "Student Registration Number" : "Search any book detail"}</label><input type="text" value={input} onChange={(e) => {setInput(e.target.value);setRecords([]);setError("");}} onKeyDown={(e) => e.key === "Enter" && handleSearch()} className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder={mode === "student" ? "e.g. FA21-BCS-001" : "Title, author, call no., ISBN, barcode…"} />{mode==="book"&&suggestions.length>0&&<div role="listbox" aria-label="Active loan suggestions" className="absolute z-20 top-full mt-1 w-full bg-white border rounded-xl shadow-xl divide-y max-h-72 overflow-auto">{suggestions.map(row=><button role="option" key={row.issueId} onClick={()=>{setInput(row.accessionNo);handleSearch(row.accessionNo);}} className="w-full text-left p-3 hover:bg-blue-50"><div className="flex justify-between gap-3"><div className="min-w-0"><p className="font-medium truncate">{row.bookTitle}</p><p className="text-xs text-slate-500 mt-1">{[row.authorName,row.callNo,row.isbn].filter(Boolean).join(" · ")}</p><p className="text-xs text-slate-500 mt-1">Borrower: {row.studentName} · {row.registrationNo}</p>{row.match&&<p className="text-xs text-blue-700 mt-1">Matched {row.match.label}: {row.match.value}</p>}</div><span className="font-mono text-xs text-slate-600">{row.accessionNo}</span></div></button>)}</div>}{mode==="book"&&suggesting&&<p className="absolute top-full mt-1 text-xs text-slate-500">Finding active loans…</p>}</div>
+              <button onClick={()=>handleSearch()} disabled={loading} className="self-end flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm text-white font-medium" style={{ background: "linear-gradient(135deg, #1F3A8A, #3B82F6)" }}><Search size={14} /> Find</button>
             </div>
             {error && <div className="flex items-center gap-2 text-red-600 text-sm bg-red-50 px-3 py-2 rounded-lg"><AlertTriangle size={15} /> {error}</div>}
             {notice && <div role="status" className="flex items-center gap-2 text-emerald-700 text-sm bg-emerald-50 px-3 py-2 rounded-lg"><CheckCircle size={15} /> {notice}</div>}
@@ -92,6 +101,8 @@ export function ReturnBook() {
                       <div><p className="text-xs text-gray-400 mb-0.5">Student Name</p><p className="text-sm font-medium text-gray-800">{record.studentName}</p></div>
                       <div><p className="text-xs text-gray-400 mb-0.5">Roll Number</p><p className="text-sm font-medium text-gray-800">{record.registrationNo}</p></div>
                       <div className="col-span-2"><p className="text-xs text-gray-400 mb-0.5">Book Title</p><p className="text-sm font-medium text-gray-800">{record.bookTitle}</p></div>
+                      <div><p className="text-xs text-gray-400 mb-0.5">Author</p><p className="text-sm font-medium text-gray-800">{record.authorName||"—"}</p></div>
+                      <div><p className="text-xs text-gray-400 mb-0.5">Call Number</p><p className="text-sm font-medium text-gray-800">{record.callNo||"—"}</p></div>
                       <div><p className="text-xs text-gray-400 mb-0.5">Book Serial</p><p className="text-sm font-medium text-gray-800">{record.accessionNo}</p></div>
                       <div><p className="text-xs text-gray-400 mb-0.5">Due Date</p><p className={`text-sm font-medium ${isOverdue ? "text-red-600" : "text-gray-800"}`}>{new Date(record.dueDate).toLocaleDateString()}</p></div>
                     </div>

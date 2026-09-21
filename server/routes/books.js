@@ -4,11 +4,12 @@ const db = require('../db');
 const { save, remove, pageOptions } = require('../lib/catalog');
 const { sendError } = require('../lib/database');
 const { today } = require('../lib/policy');
+const { bookSearchClause, bookSearchArgs } = require('../lib/bookSearch');
 router.get('/', async (req, res) => {
   try {
     const { page, limit, offset, search } = pageOptions(req.query);
-    const where = search ? "WHERE b.title LIKE ? OR b.accession_no LIKE ? OR b.author_name LIKE ? OR b.isbn LIKE ? OR JSON_UNQUOTE(JSON_EXTRACT(b.custom_data, '$.*')) LIKE ?" : '';
-    const args = search ? Array(5).fill(`%${search}%`) : [];
+    const where = search ? `WHERE ${bookSearchClause('b')}` : '';
+    const args = search ? bookSearchArgs(search) : [];
     const [count] = await db.promise().query(`SELECT COUNT(*) total FROM books b ${where}`, args);
     const [rows] = await db.promise().query(`SELECT b.*, (SELECT COUNT(*) FROM issues i WHERE i.book_id=b.id AND returned=0) issuedCount, GREATEST(b.total_copies-(SELECT COUNT(*) FROM issues i WHERE i.book_id=b.id AND returned=0),0) availableCount, (SELECT COUNT(*) FROM issues i WHERE i.book_id=b.id AND returned=0 AND due_date<?) overdueCount FROM books b ${where} ORDER BY b.id DESC LIMIT ? OFFSET ?`, [today(), ...args, limit, offset]);
     const [stats] = await db.promise().query(`SELECT COALESCE(SUM(total_copies),0) total, (SELECT COUNT(*) FROM issues WHERE returned=0) issued, (SELECT COUNT(*) FROM issues WHERE returned=0 AND due_date<?) overdue FROM books`, [today()]);

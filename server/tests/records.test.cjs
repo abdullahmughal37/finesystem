@@ -2,6 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { parseImport, student, book, classify, bookIdentity, csvText } = require('../lib/records');
 const { defaults, normalizeLayout } = require('../lib/fieldSchema');
+const { bookSearchClause, bookSearchArgs, coreSearchFields, describeBookMatch } = require('../lib/bookSearch');
 const { today, addDays, daysLate, fineAmount, policyFromRows } = require('../lib/policy');
 test('workbook headers, title rows, BOM, and optional email', async () => {
   const text='\uFEFF,,,,,,,,\n,,,Required Student Data,,,,,\nSr #,Name ,Father Name,Registration No.,Department,Contact No.,Semester,Status ,Remarks ,Email\n1, Ali   Khan ,Father, fa24-001 ,CS,03001234567,1,active,First,ALI@example.edu\n';
@@ -47,6 +48,19 @@ test('custom layout fields can be deleted but built-in fields cannot',()=>{
   const withCustom=normalizeLayout('students',[...base,custom],base);
   assert.equal(normalizeLayout('students',base,withCustom).some(field=>field.key===custom.key),false);
   assert.throws(()=>normalizeLayout('students',base.filter(field=>field.key!=='name'),base),/built-in/);
+});
+test('book search describes matches across core and custom fields',()=>{
+  const layout={fields:[...defaults('books'),{key:'custom_barcode1',label:'Barcodes',core:false,type:'text',required:false,showInForm:true,showInTable:true,width:'half',archived:false,options:[],aliases:[]}]};
+  const row={title:'Searchable Book',author_name:'Author Name',custom_data:JSON.stringify({custom_barcode1:'15915s, 15916s'})};
+  assert.equal(bookSearchArgs('Author').length,14);
+  assert.deepEqual(describeBookMatch(row,'15916s',layout),{key:'custom_barcode1',label:'Barcodes',value:'15915s, 15916s'});
+  assert.deepEqual(describeBookMatch(row,'Search',layout),{key:'title',label:'Title',value:'Searchable Book'});
+});
+test('book search SQL covers every core field and custom data',()=>{
+  const clause=bookSearchClause('b');
+  for(const field of coreSearchFields)assert.match(clause,new RegExp(`b\\.${field}`));
+  assert.match(clause,/b\.custom_data/);
+  assert.equal((clause.match(/\?/g)||[]).length,bookSearchArgs('orwell').length);
 });
 test('student validation preserves leading zeroes and permits matching names',()=>{
   assert.equal(student({name:'Same',registration_no:'001',contact_no:'00123'}).contact_no,'00123');

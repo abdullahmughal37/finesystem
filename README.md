@@ -12,8 +12,8 @@ The application is designed for university library staff. It combines a React ad
 | --- | --- |
 | Dashboard | Live circulation totals, recent issues, recent fines, and monthly activity |
 | Students | Manual add/edit/view, server-side search and pagination, configurable fields, and CSV import/export |
-| Books | One record per title/edition with a copy count, live availability and history, configurable fields, and CSV import/export |
-| Circulation | Student/book lookup, eligibility checks, configured loan limits and periods, concurrent issue protection, and atomic returns |
+| Books | One record per title/edition with a copy count, live availability and history, configurable fields, all-column search, and CSV import/export |
+| Circulation | Debounced book suggestions across every catalog field, student lookup, eligibility checks, configured loan limits and periods, concurrent issue protection, and atomic returns |
 | Fines | Automatic overdue fines, manual fines, Paid/Waived resolution, Accounts handoff, CSV export, and audited removal |
 | Fine Trash | Complete deleted-fine snapshots, deletion reason and administrator identity, with automatic permanent removal after 90 days |
 | Clearance | Live obligation checks, pending reports, versioned A4 PDF certificates, QR verification, immutable history, and revocation |
@@ -199,7 +199,7 @@ The integration runner connects only to `127.0.0.1`, creates a uniquely named `l
 Current release verification:
 
 - Frontend production build: passed
-- Backend unit tests: 17 passed
+- Backend unit tests: 19 passed
 - MariaDB integration suite: 56 database-backed checks
 - Administrator browser workflows: passed
 - Frontend production dependency audit: zero known vulnerabilities
