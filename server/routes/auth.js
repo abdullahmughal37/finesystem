@@ -8,11 +8,15 @@ const rateLimit = require("express-rate-limit");
 const { authMiddleware } = require('../middleware/auth');
 const { ValidationError, clean } = require('../lib/records');
 const { transaction, sendError } = require('../lib/database');
+const { auditMiddleware, writeAudit, requestIp } = require('../lib/audit');
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
-  message: { error: "Too many login attempts. Try again later." },
+  max: 5,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  message: { error: "Too many login attempts. Try again in 15 minutes." },
 });
 
 router.post("/login", loginLimiter, (req, res) => {
@@ -24,7 +28,7 @@ router.post("/login", loginLimiter, (req, res) => {
   const emailNorm = String(email).trim().toLowerCase();
 
   db.query(
-    "SELECT * FROM admins WHERE email = ?",
+    "SELECT *, CASE WHEN locked_until>CURRENT_TIMESTAMP THEN 1 ELSE 0 END AS is_locked FROM admins WHERE email = ?",
     [emailNorm],
     async (err, rows) => {
       if (err) {
@@ -32,12 +36,15 @@ router.post("/login", loginLimiter, (req, res) => {
         return res.status(500).json({ error: "Server error" });
       }
       if (!rows || rows.length === 0) {
+        await bcrypt.compare(password, '$2a$12$C6UzMDM.H6dfI/f/IKcEe.yrKlAHZTmNfN7NnY9mLKAfLmo2wKEmW');
+        await writeAudit({adminEmail:emailNorm,action:'login_failed',method:'POST',path:'/api/auth/login',summary:'Invalid login credentials',ipAddress:requestIp(req),userAgent:req.get('user-agent')||'',statusCode:401});
         return res.status(401).json({ error: "Invalid email or password" });
       }
 
       const admin = rows[0];
 
-      if (admin.locked_until && new Date(admin.locked_until) > new Date()) {
+      if (Number(admin.is_locked)===1) {
+        await writeAudit({adminId:admin.id,adminEmail:admin.email,action:'login_blocked',method:'POST',path:'/api/auth/login',summary:'Account temporarily locked',ipAddress:requestIp(req),userAgent:req.get('user-agent')||'',statusCode:423});
         return res.status(423).json({
           error: "Account temporarily locked",
           message: "Too many failed attempts. Try again later.",
@@ -46,24 +53,14 @@ router.post("/login", loginLimiter, (req, res) => {
 
       const valid = await bcrypt.compare(password, admin.password_hash);
       if (!valid) {
-        const failed = (admin.failed_attempts || 0) + 1;
         const maxAttempts = config.rateLimit.maxAttempts;
         const lockoutMinutes = config.rateLimit.lockoutMinutes;
-        const lockedUntil = failed >= maxAttempts
-          ? new Date(Date.now() + lockoutMinutes * 60 * 1000)
-          : null;
-
-        db.query(
-          "UPDATE admins SET failed_attempts = ?, locked_until = ? WHERE id = ?",
-          [failed, lockedUntil, admin.id],
-          () => {}
+        await db.promise().query(
+          "UPDATE admins SET failed_attempts = failed_attempts + 1, locked_until = CASE WHEN failed_attempts + 1 >= ? THEN DATE_ADD(CURRENT_TIMESTAMP, INTERVAL ? MINUTE) ELSE locked_until END WHERE id = ?",
+          [maxAttempts, lockoutMinutes, admin.id]
         );
-
-        return res.status(401).json({
-          error: "Invalid email or password",
-          attemptsLeft: Math.max(0, maxAttempts - failed),
-          locked: failed >= maxAttempts,
-        });
+        await writeAudit({adminId:admin.id,adminEmail:admin.email,action:'login_failed',method:'POST',path:'/api/auth/login',summary:'Invalid login credentials',ipAddress:requestIp(req),userAgent:req.get('user-agent')||'',statusCode:401});
+        return res.status(401).json({ error: "Invalid email or password" });
       }
 
       db.query("UPDATE admins SET failed_attempts = 0, locked_until = NULL WHERE id = ?", [admin.id], () => {});
@@ -73,6 +70,7 @@ router.post("/login", loginLimiter, (req, res) => {
         config.jwt.secret,
         { expiresIn: config.jwt.expiresIn }
       );
+      await writeAudit({adminId:admin.id,adminName:admin.name,adminEmail:admin.email,action:'login_success',method:'POST',path:'/api/auth/login',summary:'Administrator signed in',ipAddress:requestIp(req),userAgent:req.get('user-agent')||'',statusCode:200});
 
       res.json({
         success: true,
@@ -82,6 +80,8 @@ router.post("/login", loginLimiter, (req, res) => {
     }
   );
 });
+
+router.use(authMiddleware,auditMiddleware);
 
 router.put('/account',authMiddleware,loginLimiter,async(req,res)=>{
   try {
@@ -107,6 +107,15 @@ router.put('/account',authMiddleware,loginLimiter,async(req,res)=>{
 router.get('/admins',authMiddleware,async(req,res)=>{
   try {const [rows]=await db.promise().query('SELECT id,name,email,created_at FROM admins ORDER BY id');res.json(rows);}
   catch(error){sendError(res,error);}
+});
+
+router.get('/audit',async(req,res)=>{
+  try {
+    const page=Math.max(1,Number.parseInt(req.query.page,10)||1),limit=Math.min(100,Math.max(1,Number.parseInt(req.query.limit,10)||25));
+    const [count]=await db.promise().query('SELECT COUNT(*) total FROM audit_logs');
+    const [rows]=await db.promise().query('SELECT id,admin_name AS adminName,admin_email AS adminEmail,action,method,path,target_type AS targetType,target_id AS targetId,summary,ip_address AS ipAddress,status_code AS statusCode,created_at AS createdAt FROM audit_logs ORDER BY id DESC LIMIT ? OFFSET ?',[limit,(page-1)*limit]);
+    res.json({rows,total:Number(count[0].total),page,limit});
+  }catch(error){sendError(res,error);}
 });
 
 router.post('/admins',authMiddleware,async(req,res)=>{

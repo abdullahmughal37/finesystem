@@ -13,6 +13,9 @@ function validateRuntimeConfig(config) {
   if (process.env.NODE_ENV === 'production' && String(config.jwt.secret).length < 32) {
     throw new Error('JWT_SECRET must contain at least 32 characters in production.');
   }
+  if (process.env.RECOVERY_ENCRYPTION_KEY && String(process.env.RECOVERY_ENCRYPTION_KEY).length < 32) {
+    throw new Error('RECOVERY_ENCRYPTION_KEY must contain at least 32 characters when provided.');
+  }
 }
 
 module.exports = { validateRuntimeConfig };

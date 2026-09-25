@@ -34,6 +34,15 @@ export function Settings() {
     enable2FA: "0",
   });
   const [deleting, setDeleting] = useState(false);
+  const [resetPassword,setResetPassword]=useState('');
+  const [resetConfirmation,setResetConfirmation]=useState('');
+  const [restorePassword,setRestorePassword]=useState('');
+  const [restoreConfirmation,setRestoreConfirmation]=useState('');
+  const [recoveries,setRecoveries]=useState<any[]>([]);
+  const [backupNotice,setBackupNotice]=useState('');
+
+  const loadRecoveries=()=>requestJson('/api/backup/recoveries').then(setRecoveries).catch(error=>setError(error.message));
+  useEffect(()=>{if(activeTab==='backup')loadRecoveries();},[activeTab]);
 
   useEffect(() => {
     fetch(api("/api/settings"))
@@ -83,15 +92,18 @@ export function Settings() {
   };
 
   const handleDeleteAll = async () => {
-    if (!window.confirm("Delete ALL data? This cannot be undone.")) return;
+    if (!window.confirm("Reset all operational data? An encrypted recovery backup will be retained for 30 days.")) return;
     setDeleting(true);
     try {
-      await requestJson('/api/backup/delete-all', { method: 'POST' });
-      window.location.reload();
+      const result=await requestJson('/api/backup/reset', { method: 'POST',...jsonBody({currentPassword:resetPassword,confirmation:resetConfirmation}) });
+      setBackupNotice(result.message);setResetPassword('');setResetConfirmation('');await loadRecoveries();
     } catch (error) {
       setError((error as Error).message);
-      setDeleting(false);
-    }
+    } finally {setDeleting(false);}
+  };
+  const restoreBackup=async(id:number)=>{
+    if(!window.confirm('Restore this recovery backup? The current operational data will first receive its own safety backup.'))return;
+    setDeleting(true);setError('');try{const result=await requestJson(`/api/backup/recoveries/${id}/restore`,{method:'POST',...jsonBody({currentPassword:restorePassword,confirmation:restoreConfirmation})});setBackupNotice(result.message);setRestorePassword('');setRestoreConfirmation('');await loadRecoveries();window.dispatchEvent(new Event('catalog-updated'));}catch(error){setError((error as Error).message);}finally{setDeleting(false);}
   };
 
   const tabs: { key: TabKey; label: string; icon: React.ElementType }[] = [
@@ -213,10 +225,18 @@ export function Settings() {
                 <button onClick={() => downloadFile('/api/backup/books.csv','books.csv').catch(error => setError(error.message))} className="px-4 py-2 border rounded-lg text-sm">Export Books CSV</button>
                 <button onClick={() => downloadFile('/api/fines/export/csv','fines-export.csv').catch(error => setError(error.message))} className="px-4 py-2 border rounded-lg text-sm">Export Fines CSV</button>
               </div>
+              {backupNotice&&<p role="status" className="text-sm text-emerald-800 bg-emerald-50 p-3 rounded-lg">{backupNotice}</p>}
+              <div className="border-t pt-5 space-y-3">
+                <div><h4 className="font-semibold text-slate-800">30-day recovery backups</h4><p className="text-sm text-slate-500">System resets create an encrypted server-side backup. Expired backups are removed automatically.</p></div>
+                {!recoveries.length?<p className="text-sm text-slate-500">No recovery backups.</p>:<div className="overflow-auto border rounded-lg"><table className="w-full text-sm"><thead className="bg-slate-50"><tr><th className="p-3 text-left">Backup</th><th className="p-3 text-left">Records</th><th className="p-3 text-left">Expires</th><th className="p-3 text-left">Actions</th></tr></thead><tbody>{recoveries.map(item=><tr key={item.id} className="border-t"><td className="p-3"><p className="font-medium">{item.label}</p><p className="text-xs text-slate-500">{item.createdAt}</p></td><td className="p-3">{item.recordCount}</td><td className="p-3 whitespace-nowrap">{item.expiresAt}</td><td className="p-3"><div className="flex gap-2"><button onClick={()=>downloadFile(`/api/backup/recoveries/${item.id}/sql`,`library-recovery-${item.id}.sql`).catch(error=>setError(error.message))} className="px-3 py-1.5 border rounded">Download</button><button disabled={deleting} onClick={()=>restoreBackup(item.id)} className="px-3 py-1.5 bg-emerald-700 text-white rounded disabled:opacity-40">Restore</button></div></td></tr>)}</tbody></table></div>}
+                {!!recoveries.length&&<div className="grid md:grid-cols-2 gap-3"><label className="text-sm">Current password for restore<input type="password" autoComplete="current-password" value={restorePassword} onChange={e=>setRestorePassword(e.target.value)} className="block w-full mt-1 border rounded-lg px-3 py-2"/></label><label className="text-sm">Type RESTORE BACKUP<input value={restoreConfirmation} onChange={e=>setRestoreConfirmation(e.target.value)} className="block w-full mt-1 border rounded-lg px-3 py-2"/></label></div>}
+              </div>
               <div className="border-t pt-4 mt-4">
-                <p className="text-sm font-semibold text-red-700 mb-2">Danger Zone</p>
+                <p className="text-sm font-semibold text-red-700 mb-1">Danger Zone</p>
+                <p className="text-sm text-slate-600 mb-3">Reset removes operational students, books, loans, fines and clearance records after first creating a verified encrypted recovery backup.</p>
+                <div className="grid md:grid-cols-2 gap-3 mb-3"><label className="text-sm">Current administrator password<input type="password" autoComplete="current-password" value={resetPassword} onChange={e=>setResetPassword(e.target.value)} className="block w-full mt-1 border rounded-lg px-3 py-2"/></label><label className="text-sm">Type RESET ALL DATA<input value={resetConfirmation} onChange={e=>setResetConfirmation(e.target.value)} className="block w-full mt-1 border rounded-lg px-3 py-2"/></label></div>
                 <button onClick={handleDeleteAll} disabled={deleting} className="px-4 py-2 rounded-lg text-sm bg-red-600 text-white hover:bg-red-700 disabled:opacity-50">
-                  {deleting ? "Deleting..." : "Delete All Data"}
+                  {deleting ? "Creating backup…" : "Reset System Data"}
                 </button>
               </div>
             </div>

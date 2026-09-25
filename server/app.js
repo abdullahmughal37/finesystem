@@ -8,6 +8,7 @@ const db = require('./db');
 const uploadDir = require('./lib/uploads');
 
 const app = express();
+app.set('trust proxy', 1);
 const configuredOrigins = String(process.env.CORS_ORIGIN || '')
   .split(',')
   .map(value => value.trim())
@@ -35,6 +36,7 @@ app.use("/api/auth", require("./routes/auth"));
 app.use("/api/settings", require("./routes/settings"));
 app.use("/api/clearance/verify", require("./routes/clearanceVerify"));
 app.use('/api', authMiddleware);
+app.use('/api', require('./middleware/audit').auditMiddleware);
 app.use('/api/settings/layouts',require('./routes/layouts'));
 app.use("/api", require("./routes/issueBook"));
 app.use("/api/books", require("./routes/books"));

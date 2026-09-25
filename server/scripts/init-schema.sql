@@ -10,7 +10,14 @@ CREATE TABLE IF NOT EXISTS students (
   semester VARCHAR(50) DEFAULT '',
   status VARCHAR(50) DEFAULT 'Active',
   remarks TEXT,
-  custom_data JSON NULL
+  custom_data JSON NULL,
+  deleted_at DATETIME NULL,
+  deleted_by INT NULL,
+  deletion_reason VARCHAR(500) NOT NULL DEFAULT '',
+  purge_at DATETIME NULL,
+  purged_at DATETIME NULL,
+  INDEX idx_students_deleted_at (deleted_at),
+  INDEX idx_students_purge_at (purge_at)
 );
 
 CREATE TABLE IF NOT EXISTS books (
@@ -30,7 +37,14 @@ CREATE TABLE IF NOT EXISTS books (
   isbn VARCHAR(100) DEFAULT '',
   remarks TEXT,
   custom_data JSON NULL,
-  UNIQUE KEY uq_books_catalog_identity (catalog_identity)
+  deleted_at DATETIME NULL,
+  deleted_by INT NULL,
+  deletion_reason VARCHAR(500) NOT NULL DEFAULT '',
+  purge_at DATETIME NULL,
+  purged_at DATETIME NULL,
+  UNIQUE KEY uq_books_catalog_identity (catalog_identity),
+  INDEX idx_books_deleted_at (deleted_at),
+  INDEX idx_books_purge_at (purge_at)
 );
 
 CREATE TABLE IF NOT EXISTS issues (
@@ -158,6 +172,43 @@ CREATE TABLE IF NOT EXISTS clearance_letters (
   INDEX idx_clearance_student (student_id),
   INDEX idx_clearance_status (status),
   FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE RESTRICT
+);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  admin_id INT NULL,
+  admin_name VARCHAR(100) NOT NULL DEFAULT '',
+  admin_email VARCHAR(255) NOT NULL DEFAULT '',
+  action VARCHAR(100) NOT NULL,
+  method VARCHAR(10) NOT NULL,
+  path VARCHAR(500) NOT NULL,
+  target_type VARCHAR(100) NOT NULL DEFAULT '',
+  target_id VARCHAR(100) NOT NULL DEFAULT '',
+  summary VARCHAR(1000) NOT NULL DEFAULT '',
+  ip_address VARCHAR(100) NOT NULL DEFAULT '',
+  user_agent VARCHAR(500) NOT NULL DEFAULT '',
+  status_code INT NOT NULL DEFAULT 200,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_audit_created_at (created_at),
+  INDEX idx_audit_admin_id (admin_id),
+  INDEX idx_audit_action (action)
+);
+
+CREATE TABLE IF NOT EXISTS recovery_backups (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  label VARCHAR(255) NOT NULL,
+  encrypted_payload LONGBLOB NOT NULL,
+  payload_iv VARBINARY(32) NOT NULL,
+  payload_tag VARBINARY(32) NOT NULL,
+  payload_sha256 CHAR(64) NOT NULL,
+  record_count INT NOT NULL DEFAULT 0,
+  created_by INT NOT NULL,
+  created_by_name VARCHAR(100) NOT NULL DEFAULT '',
+  created_by_email VARCHAR(255) NOT NULL DEFAULT '',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  expires_at DATETIME NOT NULL,
+  restored_at DATETIME NULL,
+  INDEX idx_recovery_expires_at (expires_at)
 );
 
 -- Insert default settings

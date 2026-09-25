@@ -9,6 +9,18 @@ async function initialize() {
   for (const kind of ['students','books']) {
     const [columns] = await db.promise().query(`SHOW COLUMNS FROM ${kind} LIKE 'custom_data'`);
     if (!columns.length) await db.promise().query(`ALTER TABLE ${kind} ADD COLUMN custom_data JSON NULL`);
+    const trashColumns = [
+      ['deleted_at', 'DATETIME NULL'], ['deleted_by', 'INT NULL'],
+      ['deletion_reason', "VARCHAR(500) NOT NULL DEFAULT ''"], ['purge_at', 'DATETIME NULL'], ['purged_at', 'DATETIME NULL'],
+    ];
+    for (const [column, definition] of trashColumns) {
+      const [existing] = await db.promise().query(`SHOW COLUMNS FROM ${kind} LIKE ?`, [column]);
+      if (!existing.length) await db.promise().query(`ALTER TABLE ${kind} ADD COLUMN ${column} ${definition}`);
+    }
+    for (const [index, column] of [[`idx_${kind}_deleted_at`,'deleted_at'],[`idx_${kind}_purge_at`,'purge_at']]) {
+      const [existing] = await db.promise().query(`SHOW INDEX FROM ${kind} WHERE Key_name=?`, [index]);
+      if (!existing.length) await db.promise().query(`ALTER TABLE ${kind} ADD INDEX ${index} (${column})`);
+    }
   }
   const [bookCopies] = await db.promise().query("SHOW COLUMNS FROM books LIKE 'total_copies'");
   if (!bookCopies.length) await db.promise().query('ALTER TABLE books ADD COLUMN total_copies INT NOT NULL DEFAULT 1 AFTER title');
@@ -69,6 +81,8 @@ async function initialize() {
   const [expiryIndex] = await db.promise().query("SHOW INDEX FROM fine_deletions WHERE Key_name='idx_fine_deletions_expires_at'");
   if (!expiryIndex.length) await db.promise().query('ALTER TABLE fine_deletions ADD INDEX idx_fine_deletions_expires_at (expires_at)');
   await require('./lib/fineTrash').purgeExpiredFines(db.promise());
+  await require('./lib/catalogTrash').purgeExpiredCatalog(db.promise());
+  await db.promise().query('DELETE FROM recovery_backups WHERE expires_at<=CURRENT_TIMESTAMP');
   const defaults = [['universityName','COMSATS University Islamabad'],['campus','Sahiwal Campus'],['address','Off G.T. Road, Sahiwal, Punjab, Pakistan'],['logoUrl',''],['maxBooks','3'],['issueDays','15'],['finePerDay','10'],['reminderDays','2'],['enable2FA','0']];
   await db.promise().query('INSERT IGNORE INTO settings (setting_key, setting_value) VALUES ?', [defaults]);
 }

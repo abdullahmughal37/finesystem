@@ -19,7 +19,7 @@ module.exports = {
     pass: process.env.SMTP_PASS,
   },
   rateLimit: {
-    maxAttempts: 25,
-    lockoutMinutes: 1,
+    maxAttempts: Math.max(3, Number.parseInt(process.env.LOGIN_MAX_ATTEMPTS || '5', 10)),
+    lockoutMinutes: Math.max(5, Number.parseInt(process.env.LOGIN_LOCKOUT_MINUTES || '15', 10)),
   },
 };

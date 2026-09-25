@@ -4,7 +4,7 @@ const { sendError } = require('../lib/database');
 exports.getStudents = async (req, res) => {
   try {
     const { page, limit, offset, search } = pageOptions(req.query);
-    const where = search ? "WHERE name LIKE ? OR registration_no LIKE ? OR email LIKE ? OR department LIKE ? OR contact_no LIKE ? OR JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.*')) LIKE ?" : '';
+    const where = search ? "WHERE deleted_at IS NULL AND (name LIKE ? OR registration_no LIKE ? OR email LIKE ? OR department LIKE ? OR contact_no LIKE ? OR JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.*')) LIKE ?)" : 'WHERE deleted_at IS NULL';
     const args = search ? Array(6).fill(`%${search}%`) : [];
     const [count] = await db.promise().query(`SELECT COUNT(*) AS total FROM students ${where}`, args);
     const [rows] = await db.promise().query(`SELECT * FROM students ${where} ORDER BY id DESC LIMIT ? OFFSET ?`, [...args, limit, offset]);
@@ -20,6 +20,6 @@ exports.updateStudent = async (req, res) => {
   catch (error) { sendError(res, error); }
 };
 exports.deleteStudent = async (req, res) => {
-  try { await remove('students', Number(req.params.id)); res.json({ success: true }); }
+  try { await remove('students', Number(req.params.id),req.user,req.body?.reason); res.json({ success: true }); }
   catch (error) { sendError(res, error); }
 };

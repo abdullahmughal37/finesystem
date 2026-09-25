@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { requestJson, jsonBody } from '@/lib/api';
 
 type Admin = { id: number; name: string; email: string; created_at: string };
+type Audit = {id:number;adminName:string;adminEmail:string;action:string;method:string;path:string;summary:string;ipAddress:string;statusCode:number;createdAt:string};
 const inputClass = 'w-full mt-1.5 px-3 py-2.5 border rounded-lg text-sm';
 
 export function AccountSettings() {
@@ -20,9 +21,11 @@ export function AccountSettings() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  const [audit,setAudit]=useState<Audit[]>([]);
 
   const loadAdmins = () => requestJson('/api/auth/admins').then(setAdmins).catch(error => setError(error.message));
-  useEffect(() => { loadAdmins(); }, []);
+  const loadAudit=()=>requestJson('/api/auth/audit?limit=50').then(data=>setAudit(data.rows)).catch(error=>setError(error.message));
+  useEffect(() => { loadAdmins();loadAudit(); }, []);
 
   async function saveAccount(event: FormEvent) {
     event.preventDefault(); setError(''); setNotice('');
@@ -64,7 +67,7 @@ export function AccountSettings() {
     {notice && <p role="status" className="text-sm text-emerald-800 bg-emerald-50 p-3 rounded-lg">{notice}</p>}
 
     <form onSubmit={saveAccount} className="bg-white rounded-xl border p-6 space-y-5">
-      <div><h2 className="font-semibold">Your administrator login</h2><p className="text-sm text-slate-500 mt-1">Update your name, email, or password. Saving signs out your existing sessions.</p></div>
+      <div><h2 className="font-semibold">Your administrator login</h2><p className="text-sm text-slate-500 mt-1">Login protection limits repeated attempts and temporarily locks an account after five failures. Updating this account signs out existing sessions.</p></div>
       <div className="grid sm:grid-cols-2 gap-4">
         <label className="text-sm">Display name<input required maxLength={100} autoComplete="name" value={name} onChange={event => setName(event.target.value)} className={inputClass} /></label>
         <label className="text-sm">Login email<input required type="email" autoComplete="username" value={email} onChange={event => setEmail(event.target.value)} className={inputClass} /></label>
@@ -92,5 +95,9 @@ export function AccountSettings() {
       </div>
       <button disabled={busy} className="bg-blue-800 text-white px-4 py-2.5 rounded-lg text-sm disabled:opacity-40">{busy ? 'Creating…' : 'Create administrator login'}</button>
     </form>
+    <section className="bg-white rounded-xl border p-6 space-y-4">
+      <div className="flex items-center justify-between gap-3"><div><h2 className="font-semibold">Security and change audit</h2><p className="text-sm text-slate-500 mt-1">Latest 50 login events and administrator changes.</p></div><button onClick={loadAudit} className="px-3 py-2 border rounded-lg text-sm">Refresh</button></div>
+      <div className="overflow-auto border rounded-lg"><table className="w-full text-sm"><thead className="bg-slate-50"><tr><th className="p-3 text-left">Date</th><th className="p-3 text-left">Administrator</th><th className="p-3 text-left">Action</th><th className="p-3 text-left">Path</th><th className="p-3 text-left">Result</th></tr></thead><tbody>{audit.map(entry=><tr key={entry.id} className="border-t"><td className="p-3 whitespace-nowrap">{entry.createdAt}</td><td className="p-3"><p>{entry.adminName||'Unknown account'}</p><p className="text-xs text-slate-500">{entry.adminEmail||entry.ipAddress}</p></td><td className="p-3">{entry.action.replaceAll('_',' ')}</td><td className="p-3 text-xs max-w-72 truncate" title={entry.path}>{entry.path}</td><td className="p-3"><span className={`px-2 py-1 rounded-full text-xs ${entry.statusCode<400?'bg-emerald-50 text-emerald-800':'bg-red-50 text-red-700'}`}>{entry.statusCode}</span></td></tr>)}{!audit.length&&<tr><td colSpan={5} className="p-6 text-center text-slate-500">No audit entries yet.</td></tr>}</tbody></table></div>
+    </section>
   </div>;
 }

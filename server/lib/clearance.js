@@ -315,7 +315,7 @@ function pdfHash(buffer) { return crypto.createHash('sha256').update(buffer).dig
 
 async function clearanceCheck(connection, studentId, lock = false) {
   const suffix = lock ? ' FOR UPDATE' : '';
-  const [students] = await connection.query(`SELECT * FROM students WHERE id=?${suffix}`, [studentId]);
+  const [students] = await connection.query(`SELECT * FROM students WHERE id=? AND deleted_at IS NULL${suffix}`, [studentId]);
   if (!students.length) throw new ValidationError('Student not found.', 404);
   const student = students[0];
   const [issues] = await connection.query(`SELECT i.id,i.issue_date,i.due_date,b.id AS book_id,b.accession_no,b.title FROM issues i JOIN books b ON b.id=i.book_id WHERE i.student_id=? AND i.returned=0${suffix}`, [studentId]);

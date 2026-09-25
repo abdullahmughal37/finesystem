@@ -6,6 +6,7 @@ const db = require("../db");
 const { transaction, sendError } = require("../lib/database");
 const { policyFromRows } = require("../lib/policy");
 const { authMiddleware } = require('../middleware/auth');
+const { auditMiddleware } = require('../middleware/audit');
 
 const uploadDir = require('../lib/uploads');
 
@@ -47,7 +48,7 @@ router.get("/", (req, res) => {
   });
 });
 
-router.post('/', authMiddleware, async (req,res) => {
+router.post('/', authMiddleware, auditMiddleware, async (req,res) => {
   const body=req.body||{};
   const keys=['universityName','campus','address','logoUrl','maxBooks','issueDays','finePerDay','reminderDays','enable2FA'];
   try {
@@ -60,7 +61,7 @@ router.post('/', authMiddleware, async (req,res) => {
   }catch(error){sendError(res,error);}
 });
 
-router.post("/logo", authMiddleware, (req, res) => upload.single('logo')(req,res,error => {
+router.post("/logo", authMiddleware, auditMiddleware, (req, res) => upload.single('logo')(req,res,error => {
   if (error) return res.status(400).json({ error: error.code === 'LIMIT_FILE_SIZE' ? 'Logo must be 2 MB or smaller.' : error.message });
   if (!req.file) return res.status(400).json({ error: "Choose a logo image." });
   const url = `/uploads/${req.file.filename}`;

@@ -63,11 +63,11 @@ router.post('/create', async (req, res) => {
     if (!registration || !Number.isFinite(amount) || amount <= 0 || amount > 99999999.99) throw new ValidationError('Enter a registration number and a fine amount greater than zero.');
     if (!reason || reason.length > 500) throw new ValidationError('Enter a fine reason of up to 500 characters.');
     const id = await transaction(async connection => {
-      const [students] = await connection.query('SELECT id FROM students WHERE registration_no=? FOR UPDATE', [registration]);
+      const [students] = await connection.query('SELECT id FROM students WHERE registration_no=? AND deleted_at IS NULL FOR UPDATE', [registration]);
       if (!students.length) throw new ValidationError('Student not found.', 404);
       let bookId = null;
       if (accession) {
-        const [books] = await connection.query('SELECT id FROM books WHERE accession_no=?', [accession]);
+        const [books] = await connection.query('SELECT id FROM books WHERE accession_no=? AND deleted_at IS NULL', [accession]);
         if (!books.length) throw new ValidationError('Book accession number not found.', 404);
         bookId = books[0].id;
       }

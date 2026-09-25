@@ -11,16 +11,16 @@ The application is designed for university library staff. It combines a React ad
 | Module | Available functionality |
 | --- | --- |
 | Dashboard | Live circulation totals, recent issues, recent fines, and monthly activity |
-| Students | Manual add/edit/view, server-side search and pagination, configurable fields, and CSV import/export |
-| Books | One record per title/edition with a copy count, live availability and history, configurable fields, all-column search, and CSV import/export |
+| Students | Manual and bulk management, 30-day Trash/restore, server-side search and pagination, configurable fields, and CSV import/export |
+| Books | One record per title/edition with a copy count, bulk management, 30-day Trash/restore, live availability and history, configurable fields, all-column search, and CSV import/export |
 | Circulation | Debounced book suggestions across every catalog field, student lookup, eligibility checks, configured loan limits and periods, concurrent issue protection, and atomic returns |
 | Fines | Automatic overdue fines, manual fines, Paid/Waived resolution, Accounts handoff, CSV export, and audited removal |
 | Fine Trash | Complete deleted-fine snapshots, deletion reason and administrator identity, with automatic permanent removal after 90 days |
 | Clearance | Live obligation checks, pending reports, versioned A4 PDF certificates, QR verification, immutable history, and revocation |
 | Reports | Issuing, overdue, fine, department, Accounts Office, analytics, CSV, and Excel reporting |
 | Reminders | Overdue-recipient review and administrator-triggered SMTP email delivery |
-| Settings | Branding, logo, loan/fine policy, field layouts, clearance templates, and administrator accounts |
-| Backup | Authenticated data-only SQL and CSV downloads |
+| Settings | Branding, logo, loan/fine policy, field layouts, clearance templates, administrator accounts, and security audit history |
+| Backup | Authenticated SQL/CSV downloads plus password-protected system reset and encrypted 30-day recovery backups |
 
 ## Key business rules
 
@@ -35,6 +35,8 @@ The application is designed for university library staff. It combines a React ad
 - Issued clearance PDFs retain their template, student, eligibility, administrator, and integrity snapshots. Later template edits do not change existing certificates.
 - Sending a fine to Accounts does not mark it Paid or Waived.
 - Removing a fine preserves its complete audit snapshot in Fine Trash for 90 days.
+- Students and books without active loans can be moved to Trash individually or in bulk and restored for 30 days. At expiry, unreferenced records are removed and historically referenced records are anonymized.
+- System reset first creates an encrypted recovery snapshot, verifies the administrator password and confirmation phrase, and then clears operational data in one transaction.
 
 ## Architecture
 
@@ -243,7 +245,10 @@ The authenticated SQL download is a data export. It does not replace managed dat
 - Business endpoints require a valid administrator session; login, public branding, logo files, and read-only clearance verification are deliberately public.
 - Administrator passwords use bcrypt hashes.
 - Password changes invalidate earlier tokens.
-- Login attempts are rate-limited.
+- Login attempts are rate-limited to five failures per 15-minute IP window. Accounts are temporarily locked after five failed passwords; both limits can be configured with environment variables.
+- Successful, failed, and blocked logins and authenticated data changes are recorded in the administrator audit history.
+- Student/book deletion is recoverable for 30 days and active-loan records cannot be deleted.
+- System reset requires the current password and exact confirmation phrase and creates an encrypted 30-day recovery backup before any operational record is removed.
 - The frontend stores no database credentials.
 - Fine removal and clearance revocation retain administrator identity and required reasons.
 - Secrets belong in hosting-provider environment variables, never in Git commits or frontend variables.

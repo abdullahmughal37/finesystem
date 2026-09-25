@@ -7,6 +7,7 @@ db.ready.then(() => {
 }).then(result => {
   if (result.created) console.log(`Initial administrator created: ${result.email}`);
   require('./lib/fineTrash').startFineTrashCleanup(db.promise());
+  require('./lib/catalogTrash').startCatalogTrashCleanup(db.promise());
   const port = process.env.PORT || 5000;
   const server = app.listen(port, '0.0.0.0', () => console.log('Server running on port ' + port));
   const shutdown = signal => {

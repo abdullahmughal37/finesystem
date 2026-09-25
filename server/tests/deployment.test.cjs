@@ -5,6 +5,8 @@ const { ensureInitialAdmin } = require('../lib/adminBootstrap');
 
 test('production configuration requires database values and a strong JWT secret', () => {
   const previous = process.env.NODE_ENV;
+  const previousRecoveryKey = process.env.RECOVERY_ENCRYPTION_KEY;
+  delete process.env.RECOVERY_ENCRYPTION_KEY;
   process.env.NODE_ENV = 'production';
   try {
     assert.doesNotThrow(() => validateRuntimeConfig({
@@ -20,7 +22,14 @@ test('production configuration requires database values and a strong JWT secret'
       db: { host: 'mysql', port: '3306', user: 'app', database: 'railway' },
       jwt: { secret: 'too-short' },
     }), /at least 32 characters/);
+    process.env.RECOVERY_ENCRYPTION_KEY='too-short';
+    assert.throws(() => validateRuntimeConfig({
+      db: { host: 'mysql', port: '3306', user: 'app', database: 'railway' },
+      jwt: { secret: 'a'.repeat(32) },
+    }), /RECOVERY_ENCRYPTION_KEY/);
   } finally {
+    if(previousRecoveryKey===undefined)delete process.env.RECOVERY_ENCRYPTION_KEY;
+    else process.env.RECOVERY_ENCRYPTION_KEY=previousRecoveryKey;
     if (previous === undefined) delete process.env.NODE_ENV;
     else process.env.NODE_ENV = previous;
   }

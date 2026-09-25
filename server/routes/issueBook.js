@@ -13,11 +13,11 @@ for (const kind of ['student','book']) {
       const table=isStudent?'students':'books';const key=isStudent?'registration_no':'accession_no';const name=isStudent?'name':'title';const field=isStudent?'student_id':'book_id';
       const active=`(SELECT COUNT(*) FROM issues i WHERE i.${field}=t.id AND returned=0)`;
       const select=`SELECT t.*, ${active} AS ${isStudent?'issued':'activeIssues'}${isStudent?'':`, GREATEST(t.total_copies-${active},0) AS availableCopies`} FROM ${table} t`;
-      const [exact]=await db.promise().query(`${select} WHERE t.${key}=?`,[q]);
+      const [exact]=await db.promise().query(`${select} WHERE t.deleted_at IS NULL AND t.${key}=?`,[q]);
       let matches=exact;
       if(!matches.length) {
-        if(isStudent) [matches]=await db.promise().query(`${select} WHERE t.${name} LIKE ? ORDER BY t.${key} LIMIT 20`,[`%${q}%`]);
-        else [matches]=await db.promise().query(`${select} WHERE ${bookSearchClause('t')} ORDER BY CASE WHEN t.title LIKE ? THEN 0 WHEN t.author_name LIKE ? THEN 1 WHEN t.call_no LIKE ? THEN 2 ELSE 3 END,t.title,t.accession_no LIMIT 20`,[...bookSearchArgs(q),`${q}%`,`${q}%`,`${q}%`]);
+        if(isStudent) [matches]=await db.promise().query(`${select} WHERE t.deleted_at IS NULL AND t.${name} LIKE ? ORDER BY t.${key} LIMIT 20`,[`%${q}%`]);
+        else [matches]=await db.promise().query(`${select} WHERE t.deleted_at IS NULL AND (${bookSearchClause('t')}) ORDER BY CASE WHEN t.title LIKE ? THEN 0 WHEN t.author_name LIKE ? THEN 1 WHEN t.call_no LIKE ? THEN 2 ELSE 3 END,t.title,t.accession_no LIMIT 20`,[...bookSearchArgs(q),`${q}%`,`${q}%`,`${q}%`]);
       }
       let publicMatches;
       if(isStudent) publicMatches=matches;
@@ -32,11 +32,11 @@ router.post('/issue',async(req,res)=>{
     const registration=clean(req.body.registration_no);const accession=clean(req.body.accession_no);
     if(!registration||!accession)throw new ValidationError('Select a student and a book.');
     const result=await transaction(async connection=>{
-      const [students]=await connection.query('SELECT * FROM students WHERE registration_no=? FOR UPDATE',[registration]);
+      const [students]=await connection.query('SELECT * FROM students WHERE registration_no=? AND deleted_at IS NULL FOR UPDATE',[registration]);
       if(!students.length)throw new ValidationError('Student not found.',404);
       const student=students[0];
       if(student.status!=='Active')throw new ValidationError(`Student is ${student.status} and cannot borrow.`,409);
-      const [books]=await connection.query('SELECT id,total_copies FROM books WHERE accession_no=? FOR UPDATE',[accession]);
+      const [books]=await connection.query('SELECT id,total_copies FROM books WHERE accession_no=? AND deleted_at IS NULL FOR UPDATE',[accession]);
       if(!books.length)throw new ValidationError('Book not found.',404);
       const [active]=await connection.query('SELECT id FROM issues WHERE book_id=? AND returned=0 FOR UPDATE',[books[0].id]);
       if(active.length>=Number(books[0].total_copies))throw new ValidationError('All copies of this book are currently issued. Return a copy before issuing another.',409,'no_copies_available');
