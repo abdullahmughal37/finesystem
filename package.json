@@ -8,7 +8,7 @@
     "build": "vite build",
     "dev": "vite",
     "start": "node server/server.js",
-    "postinstall": "npm --prefix server ci --omit=dev"
+    "postinstall": "npm --prefix server ci --omit=dev && npm run build"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
